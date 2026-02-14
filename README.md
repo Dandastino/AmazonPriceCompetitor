@@ -2,6 +2,12 @@
 
 A powerful web application that scrapes Amazon product data and provides AI-powered competitive analysis using Oxylabs API and OpenAI's GPT models.
 
+[![Python](https://img.shields.io/badge/Python-3.8%2B-3776ab?logo=python&logoColor=white)](https://www.python.org/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.0%2B-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
+[![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4-412991?logo=openai&logoColor=white)](https://openai.com/)
+[![Oxylabs](https://img.shields.io/badge/Oxylabs-API-00A359?logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSIxMSIgZmlsbD0id2hpdGUiIG9wYWNpdHk9IjAuOCIvPjwvc3ZnPg==&logoColor=white)](https://oxylabs.io/)
+[![TinyDB](https://img.shields.io/badge/TinyDB-JSON_DB-4CAF50?logo=database&logoColor=white)](https://tinydb.readthedocs.io/)
+
 ## ✨ Features
 
 - **Product Scraping**: Extract detailed product information from Amazon marketplaces worldwide
