@@ -85,15 +85,18 @@ The application will open in your browser at `http://localhost:8501`
 
 3. The product will be added to your database and displayed in the main view
 
-### 2. Analyzing Competitors
+### 2. Find Competitors
 
-1. Find your product in the **Stored Products** section
-2. Click **🔎 Analyze Competitors** on the product card
-3. Click **🔄 Fetch Competitors** to scrape competitor data
-4. Navigate to the **🤖 LLM Analysis** tab
-5. Click **🚀 Run LLM Analysis** for AI-powered insights
+1. Find your product in the **Products** tab
+2. Click **🔎 Find Competitors** on the product card
+3. The app scrapes and stores related competitor products automatically
 
-### 3. Viewing Results
+### 3. Analyzing Competitors
+
+1. Open the **Best Product** tab for a quick ranking view
+2. Use the **Chatbot** tab to ask Alex for competitor insights and comparisons
+
+### 4. Viewing Results
 
 The analysis provides:
 - **Market Summary**: Overview of the competitive landscape
@@ -149,6 +152,53 @@ Scraping is handled by the Oxylabs Real-Time API client in [src/oxylab_client.py
 - **Rate Limiting**: A short delay (0.1s) is applied between requests.
 - **Geo/Domain Support**: Works across multiple Amazon marketplaces and regions.
 
+## 🔍 Competitor Analysis
+
+Once you've scraped your products, the app automatically finds and analyzes competitors.
+
+### How It Works
+
+1. **Competitor Discovery**: Click **🔎 Find Competitors** on any product card in the **Products** tab
+2. **Smart Filtering**: The app filters competitors by:
+   - **Product Type**: Only shampoos compete with shampoos (not conditioners or creams)
+   - **Category**: Same product categories for accuracy
+   - **Price Range**: Normalized unit prices (€/100ml) for fair comparison
+   - **Marketplace**: Same Amazon domain/region
+3. **Data Storage**: Found competitors are stored with category and type information
+4. **Analysis Ready**: Competitors analyzed side-by-side with unit price normalization
+
+### Competitor Matching Strategy
+
+The algorithm scores potential competitors by:
+
+- **Product Type Match** (70 pts): Must be same type (e.g., shampoo vs shampoo)
+- **Category Match** (50 pts): Shared product categories
+- **Normalized Price Proximity** (30 pts): Similar price per 100g/100ml
+- **Brand Match** (20 pts): Same brand bonus
+
+✅ **Example**: Searching for "Pantene Shampoo 500ml"
+- ✓ Pantene Conditioner 500ml → Different type, FILTERED OUT
+- ✓ Schwarzkopf Shampoo 250ml → Same type, same category → INCLUDED
+- ✓ Pantene Hair Mask 500ml → Different type, FILTERED OUT
+
+### Competitor Metrics
+
+Each competitor is tracked with:
+- **ASIN**: Unique Amazon identifier
+- **Title & Brand**: Product name and manufacturer
+- **Product Type**: Detected type (shampoo, conditioner, cream, etc.)
+- **Price & Currency**: Regional pricing from Oxylabs
+- **Unit Price**: Normalized price per 100g/100ml for fair comparison
+- **Rating**: Customer rating on a 5.0 scale
+- **Stock Status**: Availability information
+- **Categories**: Product classification and hierarchy
+
+### Analysis Views
+
+- **Best Product Tab**: Automatically ranks all products (yours + competitors) by price, rating, and stock—see who's winning
+- **Chatbot (Alex)**: Ask questions like "How do my competitors compare?" or "Which competitor is best?"
+- **Chatbot Functions**: Get specific competitor details, pricing trends, or strategic recommendations
+
 ## 🧪 Development
 
 ### Project Structure
@@ -176,12 +226,3 @@ The application includes comprehensive error handling:
 - Validation for all inputs (ASINs, domains, etc.)
 - Graceful degradation when services are unavailable
 - Detailed logging for debugging
-
-## 🎯 Future Enhancements
-
-- [ ] Price history tracking and alerts
-- [ ] Export analysis to PDF/Excel
-- [ ] Scheduled automatic competitor monitoring
-- [ ] Support for more marketplaces
-- [ ] Advanced filtering and search
-- [ ] Bulk product import via CSV

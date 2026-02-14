@@ -36,28 +36,62 @@ class ProductService:
         """
         try:
             if not asin or not isinstance(asin, str):
-                raise ValueError(f"Invalid ASIN: {asin}")
-
-            st.write(f"🔄 Scraping product: {asin}")
-            data = scrape_product_details(asin, geo_location, domain)
-
-            if not data:
-                st.error(f"Failed to scrape product {asin}")
-                logger.error(f"No data returned from scraping {asin}")
+                error_msg = f"❌ Invalid ASIN format: '{asin}'. Please enter a valid Amazon ASIN (e.g., B0CX23VSAS)"
+                st.error(error_msg)
+                logger.error(error_msg)
                 return None
 
+            if not asin.strip():
+                error_msg = "❌ ASIN cannot be empty. Please enter a product ASIN."
+                st.error(error_msg)
+                logger.error(error_msg)
+                return None
+
+            st.info(f"🔄 Scraping product: {asin} from amazon.{domain}")
+            
+            try:
+                data = scrape_product_details(asin, geo_location, domain)
+            except Exception as scrape_error:
+                error_msg = f"❌ Failed to scrape product - {str(scrape_error)}"
+                st.error(error_msg)
+                logger.error(f"Scraping failed for {asin}: {scrape_error}")
+                return None
+
+            # Validate that we actually got product data
+            if not data:
+                error_msg = f"❌ No product data returned. ASIN '{asin}' may not exist on amazon.{domain}"
+                st.error(error_msg)
+                logger.error(f"No data returned for ASIN {asin}")
+                return None
+
+            # Check for critical fields
+            title = data.get("title", "").strip()
+            product_asin = data.get("asin", "").strip()
+            
+            if not title or not product_asin:
+                error_msg = (
+                    f"❌ Product not found. The ASIN '{asin}' does not appear to exist on amazon.{domain}\n\n"
+                    "Possible reasons:\n"
+                    "• The ASIN is incorrect or invalid\n"
+                    "• The product has been removed from Amazon\n"
+                    "• The product is not available in the selected region\n"
+                    f"• Check that amazon.{domain} is the correct marketplace"
+                )
+                st.error(error_msg)
+                logger.warning(f"Product not found for ASIN {asin}: missing title or ASIN in response")
+                return None
+
+            # Store product
             self.db.insert_product(data)
-            st.success(f"✅ Product {asin} stored successfully")
-            logger.info(f"Product {asin} stored: {data.get('title')}")
+            success_msg = f"✅ Product scraped successfully!\n\n**Title:** {title}\n**ASIN:** {product_asin}"
+            st.success(success_msg)
+            logger.info(f"Product {asin} stored: {title}")
             return data
 
-        except ValueError as e:
-            st.error(f"Validation error: {e}")
-            logger.error(f"Validation error for {asin}: {e}")
-            return None
         except Exception as e:
-            st.error(f"Error scraping product: {str(e)}")
-            logger.error(f"Error scraping {asin}: {e}", exc_info=True)
+            error_msg = f"❌ Unexpected error: {str(e)}\n\nPlease check your ASIN and try again."
+            st.error(error_msg)
+            logger.error(f"Unexpected error scraping {asin}: {e}", exc_info=True)
             return None
 
     def fetch_and_store_competitors(

@@ -48,6 +48,10 @@ def configure_page():
             border-radius: 0.25rem;
             border-left: 4px solid #dc3545;
         }
+        /* Input section alignment */
+        [data-testid="column"] > div > label {
+            margin-bottom: 0.5rem !important;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -66,33 +70,42 @@ def render_header():
 
 def render_input_section() -> Tuple[str, str, str]:
     """Render input form for product and search parameters."""
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3 = st.columns([1.5, 1, 1], gap="medium")
 
     with col1:
+        st.write("**🆔 ASIN**")
         asin = st.text_input(
-            "🔍 Product ASIN",
-            placeholder="e.g., B0CX23VSAS",
+            "ASIN",
+            placeholder="B0CX23VSAS",
             help="Enter the Amazon ASIN of the product",
+            label_visibility="collapsed",
+            key="asin_input"
         ).strip()
 
     with col2:
+        st.write("**📍 Zip Code**")
         geo = st.text_input(
-            "📍 Region/Zip Code",
-            placeholder="e.g., us, de, 83980",
-            help="Enter region code or postal code",
+            "Zip Code",
+            placeholder="83980",
+            help="Enter postal code",
+            label_visibility="collapsed",
+            key="zip_input"
         ).strip()
 
     with col3:
+        st.write("**🌐 Domain**")
         domain = st.selectbox(
-            "🌐 Amazon Domain",
-            ["com", "ca", "uk", "de", "fr", "it", "es", "br", "jp", "in"],
+            "Domain",
+            ["com", "ca", "mx", "br", "uk", "de", "fr", "it", "es", "nl", "be", "se", "pl", "tr", "jp", "in", "sg", "ae", "sa", "eg", "com.au", "co.za"],
             help="Select the Amazon marketplace domain",
+            label_visibility="collapsed",
+            key="domain_input"
         )
 
     return asin, geo, domain
 
 
-def render_product_card(product: dict, db: Database, index: int = 0):
+def render_product_card(product: dict, db: Database, service: ProductService, index: int = 0):
     """Render a single product card with details and action buttons."""
     with st.container(border=True):
         col_img, col_info = st.columns([1, 3])
@@ -180,22 +193,45 @@ def render_product_card(product: dict, db: Database, index: int = 0):
                     unique_cats = list(dict.fromkeys(cat_names))[:3]
                     cats_str = " • ".join(unique_cats)
                     st.caption(f"📂 Category: {cats_str}")
-                    
-                # Delete button
-                if st.button(
-                    "🗑️ Delete Product",
-                    key=f"delete_{product['asin']}_{index}",
-                    use_container_width=True,
-                    type="secondary",
-                ):
-                    if db.delete_product(product["asin"]):
-                        st.success(f"✅ Product {product['asin']} deleted")
-                        st.rerun()
-                    else:
-                        st.error("Failed to delete product")
+
+            # Find competitors button
+            if st.button(
+                "🔎 Find Competitors",
+                key=f"find_comp_{product['asin']}_{index}",
+                use_container_width=True,
+                type="primary",
+            ):
+                with st.spinner("Finding competitors..."):
+                    try:
+                        domain = product.get("amazon_domain", "com")
+                        geo = product.get("amazon_geo_location", "")
+                        results = service.fetch_and_store_competitors(
+                            product["asin"], domain, geo, pages=2
+                        )
+                        if results:
+                            st.success(f"✅ Stored {len(results)} competitors")
+                            st.rerun()
+                        else:
+                            st.warning("No competitors found")
+                    except Exception as e:
+                        st.error(f"Error finding competitors: {str(e)}")
+                        logger.error(f"Find competitors error: {e}", exc_info=True)
+
+            # Delete button
+            if st.button(
+                "🗑️ Delete Product",
+                key=f"delete_{product['asin']}_{index}",
+                use_container_width=True,
+                type="secondary",
+            ):
+                if db.delete_product(product["asin"]):
+                    st.success(f"✅ Product {product['asin']} deleted")
+                    st.rerun()
+                else:
+                    st.error("Failed to delete product")
 
 
-def render_products_section(db: Database):
+def render_products_section(db: Database, service: ProductService):
     """Render all products with pagination (10 per page)."""
     products = db.get_all_products()
 
@@ -243,7 +279,7 @@ def render_products_section(db: Database):
 
     # Display products for current page
     for idx in range(start_idx, end_idx):
-        render_product_card(products[idx], db, idx)
+        render_product_card(products[idx], db, service, idx)
     
     # Delete all data button at the bottom
     st.divider()
@@ -296,42 +332,51 @@ def render_product_analysis_section(db: Database):
                 score = 0
                 details = []
                 
-                # Rating score (higher is better, max 5)
+                # 1. Number of people bought it (reviews count) - HIGHEST PRIORITY
+                reviews_count = product.get("reviews_count") or product.get("num_reviews") or 0
+                if isinstance(reviews_count, (int, float)) and reviews_count > 0:
+                    # Normalize: more reviews = higher score
+                    max_reviews = max([p.get("reviews_count") or p.get("num_reviews") or 0 for p in products]) or 1
+                    bought_score = (reviews_count / max_reviews) * 40  # 40 points max
+                    score += bought_score
+                    details.append(f"👥 Bought by: {int(reviews_count)} people ({bought_score:.0f} pts)")
+                
+                # 2. Reviews/Rating quality - SECOND PRIORITY
                 rating = product.get("rating", 0)
                 if isinstance(rating, (int, float)):
-                    rating_score = (rating / 5) * 40  # 40 points
+                    rating_score = (rating / 5) * 35  # 35 points max
                     score += rating_score
-                    details.append(f"Rating: ⭐ {rating:.1f}/5.0 ({rating_score:.0f} pts)")
+                    details.append(f"⭐ Rating: {rating:.1f}/5.0 ({rating_score:.0f} pts)")
                 
-                # Price score (lower is better)
+                # 3. Price score (lower is better) - THIRD PRIORITY
                 price = product.get("price", 0)
                 if isinstance(price, (int, float)) and price > 0:
                     # Normalize price score (cheaper = higher score)
                     max_price = max([p.get("price", 0) for p in products if isinstance(p.get("price"), (int, float)) and p.get("price") > 0] or [1])
-                    price_score = ((max_price - price) / max_price) * 30 if max_price > 0 else 0
+                    price_score = ((max_price - price) / max_price) * 20 if max_price > 0 else 0
                     score += price_score
                     currency = product.get("currency", "$")
-                    details.append(f"Price: {currency} {price:.2f} ({price_score:.0f} pts)")
+                    details.append(f"💰 Price: {currency} {price:.2f} ({price_score:.0f} pts)")
                 
-                # Brand quality (stock availability)
+                # 4. Stock availability - LOWEST PRIORITY
                 stock = product.get("stock", "Unknown")
                 stock_score = 0
                 if isinstance(stock, str):
                     if stock.lower() in ["in stock", "available"]:
-                        stock_score = 20
+                        stock_score = 15
                         stock_status = "In Stock"
                     elif stock.lower() in ["out of stock"]:
-                        stock_score = 5
+                        stock_score = 3
                         stock_status = "Out of Stock"
                     else:
-                        stock_score = 15
+                        stock_score = 10
                         stock_status = stock
                 else:
-                    stock_score = 15
+                    stock_score = 10
                     stock_status = str(stock)
                 
                 score += stock_score
-                details.append(f"Stock: {stock_status} ({stock_score:.0f} pts)")
+                details.append(f"📦 Stock: {stock_status} ({stock_score:.0f} pts)")
                 
                 scored_products.append({
                     "product": product,
@@ -351,9 +396,14 @@ def render_product_analysis_section(db: Database):
                 
                 with col_best:
                     st.subheader("Winner Details")
-                    st.write(f"**ASIN:** {best_product['product'].get('asin')}")
+                    asin = best_product['product'].get('asin')
+                    domain = best_product['product'].get('amazon_domain', 'com')
+                    amazon_url = f"https://www.amazon.{domain}/dp/{asin}"
+                    
+                    st.write(f"**ASIN:** {asin}")
                     st.write(f"**Brand:** {best_product['product'].get('brand', 'N/A')}")
-                    st.write(f"**Domain:** amazon.{best_product['product'].get('amazon_domain', 'com')}")
+                    st.write(f"**Domain:** amazon.{domain}")
+                    st.write(f"[🔗 Visit Product on Amazon](https://www.amazon.{domain}/dp/{asin})")
                 
                 with col_metrics:
                     st.subheader("Score Breakdown")
@@ -384,6 +434,11 @@ def render_product_analysis_section(db: Database):
                             st.write(f"**{title}**")
                             for detail in item['details']:
                                 st.caption(detail)
+                            
+                            # Add Amazon product link
+                            prod_asin = item['product'].get('asin')
+                            prod_domain = item['product'].get('amazon_domain', 'com')
+                            st.markdown(f"[🔗 View on Amazon](https://www.amazon.{prod_domain}/dp/{prod_asin})")
                         
                         with col_score:
                             st.metric("Score", f"{item['score']:.0f}")
@@ -528,18 +583,16 @@ def main():
 
         if st.button("🔍 Scrape Product", use_container_width=True, type="primary"):
             if not asin:
-                st.error("Please enter an ASIN")
+                st.error("❌ Please enter an ASIN to scrape a product")
             else:
-                with st.spinner("Scraping product..."):
+                with st.spinner("🔄 Scraping product from Amazon..."):
                     try:
                         result = service.scrape_and_store_product(asin, geo, domain)
                         if result:
-                            st.success("✅ Product scraped successfully!")
+                            # Detailed success and product info already shown by scrape_and_store_product()
                             st.rerun()
-                        else:
-                            st.error("Failed to scrape product")
                     except Exception as e:
-                        st.error(f"Error: {str(e)}")
+                        st.error(f"❌ Unexpected error: {str(e)}")
                         logger.error(f"Scraping error: {e}", exc_info=True)
 
         st.divider()
@@ -554,7 +607,7 @@ def main():
     tab1, tab2, tab3 = st.tabs(["📦 Products", "🏆 Best Product", "💬 Chatbot"])
     
     with tab1:
-        render_products_section(db)
+        render_products_section(db, service)
     
     with tab2:
         render_product_analysis_section(db)
