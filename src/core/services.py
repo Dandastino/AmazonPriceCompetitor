@@ -3,22 +3,31 @@ from typing import List, Dict, Any, Optional
 
 import streamlit as st
 
-from src.db import Database
-from src.oxylab_client import (
-    scrape_multiple_products,
+from .mongodb import MongoDB
+from src.core.oxylab_client import (
     scrape_product_details,
     search_competitors,
 )
+from src.utils import (
+    extract_product_categories,
+    format_price,
+    format_rating,
+    get_logger,
+    validate_string,
+    validate_range,
+    UINotifier,
+    handle_exception
+)
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ProductService:
     """Service for managing product scraping and storage."""
 
     def __init__(self):
-        """Initialize service with database connection."""
-        self.db = Database()
+        """Initialize service with MongoDB connection."""
+        self.db = MongoDB()
 
     def scrape_and_store_product(
         self, asin: str, geo_location: str, domain: str
@@ -35,32 +44,21 @@ class ProductService:
             Product data dict or None on failure
         """
         try:
-            if not asin or not isinstance(asin, str):
-                error_msg = f"❌ Invalid ASIN format: '{asin}'. Please enter a valid Amazon ASIN (e.g., B0CX23VSAS)"
-                st.error(error_msg)
-                logger.error(error_msg)
-                return None
+            # Validate ASIN
+            validate_string(asin, "ASIN", allow_empty=False)
 
-            if not asin.strip():
-                error_msg = "❌ ASIN cannot be empty. Please enter a product ASIN."
-                st.error(error_msg)
-                logger.error(error_msg)
-                return None
-
-            st.info(f"🔄 Scraping product: {asin} from amazon.{domain}")
+            UINotifier.info(f"Scraping product: {asin} from amazon.{domain}")
             
             try:
                 data = scrape_product_details(asin, geo_location, domain)
             except Exception as scrape_error:
-                error_msg = f"❌ Failed to scrape product - {str(scrape_error)}"
-                st.error(error_msg)
+                UINotifier.error(f"Failed to scrape product - {str(scrape_error)}")
                 logger.error(f"Scraping failed for {asin}: {scrape_error}")
                 return None
 
             # Validate that we actually got product data
             if not data:
-                error_msg = f"❌ No product data returned. ASIN '{asin}' may not exist on amazon.{domain}"
-                st.error(error_msg)
+                UINotifier.error(f"No product data returned. ASIN '{asin}' may not exist on amazon.{domain}")
                 logger.error(f"No data returned for ASIN {asin}")
                 return None
 
@@ -70,28 +68,29 @@ class ProductService:
             
             if not title or not product_asin:
                 error_msg = (
-                    f"❌ Product not found. The ASIN '{asin}' does not appear to exist on amazon.{domain}\n\n"
+                    f"Product not found. The ASIN '{asin}' does not appear to exist on amazon.{domain}\n\n"
                     "Possible reasons:\n"
                     "• The ASIN is incorrect or invalid\n"
                     "• The product has been removed from Amazon\n"
                     "• The product is not available in the selected region\n"
                     f"• Check that amazon.{domain} is the correct marketplace"
                 )
-                st.error(error_msg)
+                UINotifier.error(error_msg)
                 logger.warning(f"Product not found for ASIN {asin}: missing title or ASIN in response")
                 return None
 
-            # Store product
-            self.db.insert_product(data)
-            success_msg = f"✅ Product scraped successfully!\n\n**Title:** {title}\n**ASIN:** {product_asin}"
-            st.success(success_msg)
-            logger.info(f"Product {asin} stored: {title}")
+            # Store as main product (not competitor)
+            self.db.add_product(data)
+            UINotifier.success(f"Product scraped successfully!\n\n**Title:** {title}\n**ASIN:** {product_asin}")
+            logger.info(f"Main product {asin} stored: {title}")
             return data
 
+        except ValueError as e:
+            UINotifier.error(f"Invalid input: {str(e)}")
+            logger.error(f"Validation error: {e}")
+            return None
         except Exception as e:
-            error_msg = f"❌ Unexpected error: {str(e)}\n\nPlease check your ASIN and try again."
-            st.error(error_msg)
-            logger.error(f"Unexpected error scraping {asin}: {e}", exc_info=True)
+            handle_exception(logger, e, "Unexpected error. Please check your ASIN and try again.")
             return None
 
     def fetch_and_store_competitors(
@@ -114,22 +113,17 @@ class ProductService:
             List of stored competitor products
         """
         try:
-            # Validate input
-            if not parent_asin or not isinstance(parent_asin, str):
-                st.error("Invalid parent ASIN")
-                return []
-
-            if pages < 1 or pages > 5:
-                st.warning(f"Pages {pages} out of range, using 2")
-                pages = 2
+            # Validate inputs
+            validate_string(parent_asin, "parent_asin", allow_empty=False)
+            validate_range(pages, "pages", min_val=1, max_val=5)
 
             st.write(f"🔍 Fetching parent product: {parent_asin}")
 
-            # Fetch parent product
+            # Fetch parent product (main product only)
             parent = self.db.get_product(parent_asin)
             if not parent:
-                st.error(f"Parent product {parent_asin} not found in database")
-                logger.warning(f"Parent product {parent_asin} not found")
+                st.error(f"Main product {parent_asin} not found. Please add it as a product first.")
+                logger.warning(f"Main product {parent_asin} not found")
                 return []
 
             # Get search parameters from parent
@@ -145,7 +139,7 @@ class ProductService:
                 logger.warning(f"No categories found for {parent_asin}")
                 return []
 
-            st.write(f"📂 Searching in categories: {', '.join(search_categories[:3])}")
+            st.write(f"📂 Searching in categories: {search_categories[:3]}")
 
             # Search competitors across categories
             all_results = self._search_across_categories(
@@ -182,17 +176,7 @@ class ProductService:
 
     def _extract_categories(self, parent: Dict[str, Any]) -> List[str]:
         """Extract and clean categories from parent product."""
-        categories = []
-
-        if parent.get("categories") and isinstance(parent["categories"], list):
-            categories.extend(str(cat).strip() for cat in parent["categories"] if cat)
-
-        if parent.get("category_path") and isinstance(parent["category_path"], list):
-            categories.extend(str(cat).strip() for cat in parent["category_path"] if cat)
-
-        # Remove duplicates and empty strings
-        unique_categories = list(set(cat for cat in categories if cat and len(cat) > 0))
-        return unique_categories[:5]  # Limit to top 5
+        return extract_product_categories(parent, max_items=5)
 
     def _search_across_categories(
         self,
@@ -208,7 +192,7 @@ class ProductService:
 
         for idx, category in enumerate(categories[:3]):  # Limit to 3 categories
             try:
-                st.write(f"  Searching category: {category}")
+                st.write(f"📂 Searching category: {category}")
                 search_result = search_competitors(
                     query_title=parent.get("title", ""),
                     domain=domain,
@@ -249,7 +233,7 @@ class ProductService:
     def _scrape_and_store_competitors(
         self, competitor_asins: List[str], parent_asin: str, geo_location: str, domain: str
     ) -> List[Dict[str, Any]]:
-        """Scrape and store competitor products."""
+        """Scrape and store competitor products in competitors collection."""
         stored = []
         progress_bar = st.progress(0)
 
@@ -257,10 +241,10 @@ class ProductService:
             try:
                 details = scrape_product_details(asin, geo_location, domain)
                 if details:
-                    details["parent_asin"] = parent_asin
-                    self.db.insert_product(details)
+                    # Store as competitor (separate collection)
+                    self.db.add_competitor(details, parent_asin)
                     stored.append(details)
-                    logger.info(f"Stored competitor {asin}")
+                    logger.info(f"Stored competitor {asin} for parent {parent_asin}")
             except Exception as e:
                 logger.error(f"Error scraping competitor {asin}: {e}")
                 st.warning(f"Failed to scrape competitor {asin}")
@@ -282,13 +266,10 @@ class ProductService:
                 currency = competitor.get("currency", "$")
 
                 # Format price
-                if isinstance(price, (int, float)) and price > 0:
-                    price_str = f"{currency} {price:.2f}"
-                else:
-                    price_str = "N/A"
+                price_str = format_price(price, currency=currency, min_value=0.01)
 
                 rating = competitor.get("rating")
-                rating_str = f"⭐ {rating:.1f}" if isinstance(rating, (int, float)) else "N/A"
+                rating_str = format_rating(rating, style="star_prefix")
 
                 stock = competitor.get("stock", "Unknown")
 

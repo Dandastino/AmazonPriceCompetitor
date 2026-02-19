@@ -9,9 +9,19 @@ import requests
 import streamlit as st
 from dotenv import load_dotenv
 
+from src.utils import (
+    get_logger,
+    validate_string,
+    validate_range,
+    validate_list,
+    handle_exception,
+    progress_tracker,
+    UINotifier
+)
+
 load_dotenv()
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 OXYLABS_BASE_URL = "https://realtime.oxylabs.io/v1/queries"
 DEFAULT_TIMEOUT = 30
@@ -79,7 +89,7 @@ class OxylabsClient:
             raise Exception(error_msg)
 
         except Exception as e:
-            logger.error(f"Unexpected error in Oxylabs request: {e}", exc_info=True)
+            handle_exception(logger, e, show_ui=False)
             raise
 
     @staticmethod
@@ -130,6 +140,8 @@ class OxylabsClient:
             "stock": content.get("stock", ""),
             "title": content.get("title", ""),
             "rating": content.get("rating"),
+            "review_count": content.get("review_count") or content.get("reviews_count") or content.get("num_reviews"),
+            "category_rank": content.get("category_rank") or content.get("ranking") or content.get("rank"),
             "images": content.get("images", []),
             "categories": content.get("category", []) or content.get("categories", []),
             "category_path": category_path,
@@ -155,8 +167,8 @@ class OxylabsClient:
             Normalized product dict or None on failure
         """
         try:
-            if not asin or not isinstance(asin, str):
-                raise ValueError(f"Invalid ASIN: {asin}")
+            # Validate ASIN
+            validate_string(asin, "ASIN", allow_empty=False)
 
             payload = {
                 "source": "amazon_product",
@@ -181,7 +193,7 @@ class OxylabsClient:
             logger.error(f"Validation error for {asin}: {e}")
             raise
         except Exception as e:
-            logger.error(f"Error scraping product {asin}: {e}", exc_info=True)
+            handle_exception(logger, e, show_ui=False)
             raise
 
     @staticmethod
@@ -250,6 +262,7 @@ class OxylabsClient:
         categories: List[str],
         pages: int = 1,
         geo_location: str = "",
+        show_progress: bool = True,
     ) -> List[Dict[str, Any]]:
         """
         Search for competitor products.
@@ -265,22 +278,19 @@ class OxylabsClient:
             List of normalized search results
         """
         try:
-            if not query_title or not isinstance(query_title, str):
-                logger.warning(f"Invalid query_title: {query_title}")
-                return []
+            # Validate inputs
+            validate_string(query_title, "query_title", allow_empty=False)
+            validate_range(pages, "pages", min_val=1, max_val=5)
 
-            if pages < 1 or pages > 5:
-                logger.warning(f"Pages {pages} out of range, clamping to 1-5")
-                pages = max(1, min(pages, 5))
-
-            st.write("🔎 Searching for competitors")
+            if show_progress:
+                st.write("🔎 Searching for competitors")
             search_title = self.clean_product_name(query_title)
             results = []
             seen_asins = set()
 
             total_requests = len(SEARCH_STRATEGIES) * pages
-            progress_bar = st.progress(0)
-            progress_text = st.empty()
+            progress_bar = st.progress(0) if show_progress else None
+            progress_text = st.empty() if show_progress else None
             req_count = 0
 
             logger.info(f"Starting competitor search: '{search_title}' in {domain}/{geo_location}")
@@ -303,8 +313,9 @@ class OxylabsClient:
                             payload["refinement"] = {"category": categories[0]}
 
                         req_count += 1
-                        progress_text.write(f"Searching [{sort_by}, page {page}]...")
-                        progress_bar.progress(min(req_count / total_requests, 1.0))
+                        if show_progress:
+                            progress_text.write(f"Searching [{sort_by}, page {page}]...")
+                            progress_bar.progress(min(req_count / total_requests, 1.0))
 
                         content = self.extract_content(self.post_query(payload))
                         items = self.extract_search_results(content)
@@ -319,13 +330,16 @@ class OxylabsClient:
 
                     except Exception as e:
                         logger.warning(f"Error in search strategy {sort_by}, page {page}: {e}")
-                        progress_text.write(f"⚠️ Error in strategy {sort_by}: {str(e)[:50]}")
+                        if show_progress:
+                            progress_text.write(f"⚠️ Error in strategy {sort_by}: {str(e)[:50]}")
                         continue
 
-            progress_bar.empty()
-            progress_text.empty()
+            if show_progress:
+                progress_bar.empty()
+                progress_text.empty()
 
-            st.write(f"✅ Found {len(results)} competitors")
+            if show_progress:
+                st.write(f"✅ Found {len(results)} competitors")
             logger.info(f"Competitor search complete: {len(results)} results")
             return results
 
@@ -382,6 +396,129 @@ class OxylabsClient:
         st.write(f"✅ Scraped {len(products)}/{len(asins)} products successfully")
         logger.info(f"Scraping complete: {len(products)}/{len(asins)} products")
         return products
+    
+    def scrape_product_reviews(
+        self, 
+        asin: str, 
+        geo_location: str, 
+        domain: str,
+        max_reviews: int = 50,
+        show_progress: bool = True
+    ) -> List[Dict[str, Any]]:
+        """
+        Scrape reviews for a product.
+
+        Args:
+            asin: Product ASIN
+            geo_location: Geographic location
+            domain: Amazon domain
+            max_reviews: Maximum number of reviews to scrape
+            show_progress: Show progress in UI
+
+        Returns:
+            List of review dicts with text, rating, title, etc.
+        """
+        try:
+            if not asin or not isinstance(asin, str):
+                raise ValueError(f"Invalid ASIN: {asin}")
+
+            if show_progress:
+                st.write(f"📝 Scraping reviews for {asin}...")
+
+            reviews = []
+            pages_needed = (max_reviews // 10) + 1  # Amazon shows ~10 reviews per page
+            
+            progress_bar = st.progress(0) if show_progress else None
+            progress_text = st.empty() if show_progress else None
+
+            logger.info(f"Scraping up to {max_reviews} reviews for {asin}")
+
+            for page in range(1, pages_needed + 1):
+                if len(reviews) >= max_reviews:
+                    break
+
+                try:
+                    # Build the full Amazon URL for the product
+                    amazon_domain = domain if domain else "com"
+                    product_url = f"https://www.amazon.{amazon_domain}/dp/{asin}"
+                    
+                    payload = {
+                        "source": "amazon",
+                        "url": product_url,
+                        "geo_location": geo_location,
+                        "parse": True,
+                        "start_page": page,
+                    }
+
+                    if show_progress:
+                        progress_text.write(f"Fetching page {page}/{pages_needed}...")
+                        progress_bar.progress(min(page / pages_needed, 1.0))
+
+                    raw = self.post_query(payload)
+                    content = self.extract_content(raw)
+
+                    # Extract reviews from response
+                    page_reviews = self._extract_reviews(content)
+                    reviews.extend(page_reviews)
+
+                    logger.debug(f"Page {page}: {len(page_reviews)} reviews")
+
+                    if len(page_reviews) == 0:
+                        # No more reviews
+                        break
+
+                    time.sleep(RATE_LIMIT_DELAY)
+
+                except Exception as e:
+                    logger.warning(f"Error scraping reviews page {page}: {e}")
+                    continue
+
+            # Trim to max_reviews
+            reviews = reviews[:max_reviews]
+
+            if show_progress:
+                progress_bar.empty()
+                progress_text.empty()
+                st.write(f"✅ Scraped {len(reviews)} reviews")
+
+            logger.info(f"Successfully scraped {len(reviews)} reviews for {asin}")
+            return reviews
+
+        except Exception as e:
+            logger.error(f"Error scraping reviews for {asin}: {e}", exc_info=True)
+            if show_progress:
+                st.error(f"Error scraping reviews: {str(e)}")
+            return []
+    
+    @staticmethod
+    def _extract_reviews(content: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Extract review items from API response."""
+        if not isinstance(content, dict):
+            return []
+
+        reviews = []
+
+        # Oxylabs review response structure
+        if "reviews" in content and isinstance(content["reviews"], list):
+            for review in content["reviews"]:
+                if isinstance(review, dict):
+                    normalized = {
+                        "id": review.get("id") or review.get("review_id"),
+                        "title": review.get("title") or review.get("review_title", ""),
+                        "text": review.get("content") or review.get("review_text") or review.get("text", ""),
+                        "rating": review.get("rating") or review.get("review_rating"),
+                        "author": review.get("author") or review.get("reviewer", "Anonymous"),
+                        "date": review.get("date") or review.get("review_date", ""),
+                        "verified": review.get("verified_purchase", False),
+                        "helpful_count": review.get("helpful_count", 0),
+                    }
+                    
+                    # Only add reviews with actual text content
+                    if normalized["text"] and len(normalized["text"].strip()) > 0:
+                        reviews.append(normalized)
+
+        logger.debug(f"Extracted {len(reviews)} reviews from response")
+        return reviews
 
 
 # Backward-compatible function interfaces
@@ -402,14 +539,32 @@ def scrape_product_details(asin: str, geo_location: str, domain: str) -> Optiona
 
 
 def search_competitors(
-    query_title: str, domain: str, categories: List[str], pages: int = 1, geo_location: str = ""
+    query_title: str,
+    domain: str,
+    categories: List[str],
+    pages: int = 1,
+    geo_location: str = "",
+    show_progress: bool = True,
 ) -> List[Dict[str, Any]]:
     """Search competitors (uses OxylabsClient)."""
-    return get_client().search_competitors(query_title, domain, categories, pages, geo_location)
+    return get_client().search_competitors(
+        query_title, domain, categories, pages, geo_location, show_progress
+    )
 
 
 def scrape_multiple_products(asins: List[str], geo_location: str, domain: str) -> List[Dict[str, Any]]:
     """Scrape multiple products (uses OxylabsClient)."""
     return get_client().scrape_multiple_products(asins, geo_location, domain)
+
+
+def scrape_product_reviews(
+    asin: str, 
+    geo_location: str, 
+    domain: str,
+    max_reviews: int = 50,
+    show_progress: bool = True
+) -> List[Dict[str, Any]]:
+    """Scrape product reviews (uses OxylabsClient)."""
+    return get_client().scrape_product_reviews(asin, geo_location, domain, max_reviews, show_progress)
 
 

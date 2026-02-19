@@ -2,18 +2,19 @@ import os
 import logging
 import time
 import re
-from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime, timedelta
+from typing import Optional, List, Dict, Any, Tuple
 from functools import wraps
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, ValidationError
 
-from src.db import Database
+from src.core import MongoDB
+from src.utils import extract_category_names, get_logger, handle_exception
 
 load_dotenv()
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ProductTypeDetector:
@@ -293,7 +294,7 @@ class CompetitorAnalyzer:
         """Initialize analyzer with LLM config."""
         self.model = model
         self.temperature = temperature
-        self.db = Database()
+        self.db = MongoDB()
         self.rate_limiter = RateLimiter(calls_per_minute=3)
         self.cache: Dict[str, tuple] = {}  # Simple in-memory cache
         self.cache_ttl = 3600  # 1 hour
@@ -372,8 +373,8 @@ class CompetitorAnalyzer:
                 
                 # Category match (heavy weight)
                 if target_categories and p.get("categories"):
-                    target_cat_names = self._extract_category_names(target_categories)
-                    p_cat_names = self._extract_category_names(p.get("categories", []))
+                    target_cat_names = extract_category_names(target_categories)
+                    p_cat_names = extract_category_names(p.get("categories", []))
                     common_cats = set(target_cat_names) & set(p_cat_names)
                     if common_cats:
                         score += 50
@@ -423,20 +424,6 @@ class CompetitorAnalyzer:
             logger.error(f"Error finding competitors: {e}")
             return []
     
-    def _extract_category_names(self, categories: List[Any]) -> List[str]:
-        """Extract category names from various formats."""
-        names = []
-        for cat in categories:
-            if isinstance(cat, dict):
-                if "ladder" in cat:
-                    for item in cat.get("ladder", []):
-                        if isinstance(item, dict) and "name" in item:
-                            names.append(item["name"])
-                elif "name" in cat:
-                    names.append(cat["name"])
-            elif isinstance(cat, str):
-                names.append(cat)
-        return names
 
     def analyze_competitors(self, asin: str) -> str:
         """Analyze competitors for a given ASIN with caching and rate limiting."""
@@ -456,8 +443,8 @@ class CompetitorAnalyzer:
                 logger.warning(f"Product not found for ASIN: {asin}")
                 return self._fallback_response(asin)
 
-            # Get competitors using similarity matching
-            competitors = self._find_competitors_by_similarity(product, limit=5)
+            # Get competitors linked to this product
+            competitors = self.db.get_competitors(asin)
             if not competitors:
                 logger.warning(f"No competitor data for ASIN: {asin}")
                 fallback = self._create_response_string(
@@ -465,7 +452,7 @@ class CompetitorAnalyzer:
                         summary=f"Product {asin} found but lacks competitor data.",
                         positioning="Unable to position without competitors.",
                         top_competitors=[],
-                        recommendations=["Collect more competitor data by scraping similar products."]
+                        recommendations=["Scrape competitors for this product before running analysis."]
                     )
                 )
                 self._cache_analysis(asin, fallback)
@@ -576,7 +563,7 @@ class CompetitorAnalyzer:
 
             # Handle categories
             categories = product.get("categories", [])
-            category_str = ", ".join(self._extract_category_names(categories)) if categories else "N/A"
+            category_str = ", ".join(extract_category_names(categories)) if categories else "N/A"
 
             result = chain.invoke({
                 "product_title": product.get("title", "Unknown"),
