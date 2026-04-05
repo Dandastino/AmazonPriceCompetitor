@@ -21,11 +21,11 @@ analytics = AnalyticsEngine()
 
 def render():
     """Main analysis page with tool selection."""
-    st.subheader("📊 Analysis Tools")
+    st.subheader("Analysis Tools")
     
     analysis_type = st.radio(
-        "Choose analysis type:",
-        ["📝 Review Analysis & Sentiment", "🎯 AI Competitor Insights", "💡 Price Analysis"],
+        "What do you want to analyze?",
+        ["Review Analysis & Sentiment", "AI Competitor Insights", "Price Analysis"],
         horizontal=True
     )
     
@@ -42,20 +42,20 @@ def render():
 def render_review_analysis():
     """Render review analysis with sentiment analysis."""
     db = MongoDB()
-    st.subheader("📝 Review Analysis & Sentiment Insights")
+    st.subheader("Review Analysis & Sentiment Insights")
     
     products = db.get_all_products()
     
     if not products:
-        st.info("👋 No products to analyze. Scrape products first!")
+        st.info("No products to analyze. Scrape products first!")
         return
     
     st.markdown("""
     This section allows you to:
-    - 🔍 Scrape product reviews from Amazon
-    - 🤖 Analyze sentiment using AI
-    - 📊 Visualize pain points and gaps
-    - ☁️ Generate word clouds from complaints
+    - Scrape product reviews from Amazon
+    - Analyze sentiment using AI
+    - Visualize pain points and gaps
+    - Generate word clouds from complaints
     """)
     
     st.divider()
@@ -67,7 +67,7 @@ def render_review_analysis():
     product = ui.get_selected_product(products, selected, product_options)
     
     st.divider()
-    st.markdown("### 🔍 Step 1: Scrape Reviews")
+    st.markdown("### Step 1: Scrape Reviews")
     
     col1, col2, col3 = st.columns([2, 1, 1])
     with col1:
@@ -75,18 +75,18 @@ def render_review_analysis():
     with col2:
         st.write("")
         st.write("")
-        scrape_button = st.button("🚀 Scrape Reviews", type="primary", width='stretch')
+        scrape_button = st.button("Scrape Reviews", type="primary", width='stretch')
     with col3:
         st.write("")
         st.write("")
-        if st.button("🗑️ Clear Cache", type="secondary", width='stretch'):
+        if st.button("Clear Cache", type="secondary", width='stretch'):
             if "review_data" in st.session_state:
                 del st.session_state["review_data"]
             st.success("Cache cleared!")
             st.rerun()
     
     if scrape_button:
-        with st.spinner("🔄 Scraping reviews from Amazon..."):
+        with st.spinner("Scraping reviews from Amazon..."):
             try:
                 from src.core import scrape_product_reviews
                 
@@ -107,7 +107,7 @@ def render_review_analysis():
                         "product": product,
                         "reviews": reviews
                     }
-                    st.success(f"✅ Scraped {len(reviews)} reviews successfully!")
+                    st.success(f"Scraped {len(reviews)} reviews successfully!")
                 else:
                     st.warning("No reviews found for this product")
                     
@@ -120,10 +120,10 @@ def render_review_analysis():
         reviews = review_data["reviews"]
         
         st.divider()
-        st.markdown(f"### 🤖 Step 2: Analyze Sentiment ({len(reviews)} reviews)")
+        st.markdown(f"### Step 2: Analyze Sentiment ({len(reviews)} reviews)")
         
-        if st.button("🧠 Analyze Sentiment", type="primary", width='stretch'):
-            with st.spinner("🤖 Analyzing sentiment with GPT-4o-mini..."):
+        if st.button("Analyze Sentiment", type="primary", width='stretch'):
+            with st.spinner("Analyzing sentiment with GPT-4o-mini..."):
                 try:
                     analyzer = ReviewAnalyzer(analysis_mode="llm")
                     
@@ -138,7 +138,7 @@ def render_review_analysis():
                     
                     if "error" not in result:
                         st.session_state["sentiment_analysis"] = result
-                        st.success("✅ Sentiment analysis complete!")
+                        st.success("Sentiment analysis complete!")
                     else:
                         st.error(f"Analysis failed: {result['error']}")
                         
@@ -156,7 +156,7 @@ def _render_sentiment_results(analysis_result):
     analyzed_reviews = analysis_result.get("reviews", [])
     
     st.divider()
-    st.markdown("### 📊 Step 3: View Insights")
+    st.markdown("### Step 3: View Insights")
     
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -181,7 +181,7 @@ def _render_sentiment_results(analysis_result):
         generate_complaint_word_cloud(analyzed_reviews, min_rating=3.0, max_words=50)
         st.divider()
     
-    with st.expander("📋 View Detailed Aspect Analysis"):
+    with st.expander("View Detailed Aspect Analysis"):
         top_negative = gap_analysis.get("top_negative_aspects", [])
         if top_negative:
             aspect_df = pd.DataFrame([
@@ -200,20 +200,20 @@ def _render_sentiment_results(analysis_result):
 def render_ai_insights():
     """Render AI-powered competitor insights."""
     db = MongoDB()
-    st.subheader("🎯 AI-Powered Competitor Insights")
+    st.subheader("AI-Powered Competitor Insights")
     
     products = db.get_all_products()
     
     if not products:
-        st.info("👋 No products to analyze. Scrape products first!")
+        st.info("No products to analyze. Scrape products first!")
         return
     
     st.markdown("""
     Get strategic insights powered by GPT-4:
-    - 🎯 Market positioning analysis
-    - 💡 Competitive advantages & gaps
-    - 📈 Price & value comparison
-    - ✨ Actionable recommendations
+    - Market positioning analysis
+    - Competitive advantages & gaps
+    - Price & value comparison
+    - Actionable recommendations
     """)
     
     st.divider()
@@ -226,13 +226,13 @@ def render_ai_insights():
     competitors = db.get_competitors(asin)
     
     if not competitors:
-        st.warning(f"⚠️ No competitors found. Click '🔎 Find Competitors' on the product card first!")
+        st.warning(f"No competitors found. Click '🔎 Find Competitors' on the product card first!")
         return
     
-    st.info(f"📊 Found {len(competitors)} competitors for analysis")
+    st.info(f"Found {len(competitors)} competitors for analysis")
     
-    if st.button("🧠 Generate AI Insights", type="primary", width='stretch'):
-        with st.spinner("🤖 Analyzing with AI... This may take 10-30 seconds"):
+    if st.button("Generate AI Insights", type="primary", width='stretch'):
+        with st.spinner("Analyzing with AI... This may take 10-30 seconds"):
             try:
                 analysis = analyze_competitors(asin)
                 
@@ -242,7 +242,7 @@ def render_ai_insights():
                         "analysis": analysis,
                         "timestamp": pd.Timestamp.now()
                     }
-                    st.success("✅ AI analysis complete!")
+                    st.success("AI analysis complete!")
                 else:
                     st.error("Failed to generate analysis")
                     
@@ -256,7 +256,7 @@ def render_ai_insights():
         analyzed_product = ai_data["product"]
         
         st.divider()
-        st.markdown(f"### 📄 Analysis Results")
+        st.markdown(f"### Analysis Results")
         st.caption(f"Generated: {ai_data['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
         
         st.markdown(analysis)
@@ -265,13 +265,13 @@ def render_ai_insights():
         col1, col2 = st.columns([1, 3])
         with col1:
             st.download_button(
-                label="📥 Download Analysis",
+                label="Download Analysis",
                 data=analysis,
                 file_name=f"ai_insights_{analyzed_product.get('asin')}.txt",
                 mime="text/plain",
             )
         with col2:
-            if st.button("🔄 Clear Results", type="secondary"):
+            if st.button("Clear Results", type="secondary"):
                 del st.session_state["ai_analysis"]
                 st.rerun()
 
@@ -279,12 +279,12 @@ def render_ai_insights():
 def render_analysis():
     """Render product analysis and pricing insights."""
     db = MongoDB()
-    st.subheader("💡 Product Analysis")
+    st.subheader("Product Analysis")
     
     products = db.get_all_products()
     
     if not products:
-        st.info("👋 No products yet. Scrape some products first!")
+        st.info("No products yet. Scrape some products first!")
         return
     
     product_options = ui.create_product_options(products)
@@ -294,7 +294,7 @@ def render_analysis():
     competitors = db.get_competitors(product.get("asin"))
     
     if not competitors:
-        st.warning("⚠️ No competitors found. Use '🔎 Find Competitors' first to analyze pricing!")
+        st.warning("No competitors found. Use '🔎 Find Competitors' first to analyze pricing!")
         return
     
     st.divider()
@@ -314,7 +314,7 @@ def render_analysis():
     
     st.divider()
     
-    st.markdown("### 📈 Your Product Metrics")
+    st.markdown("### Your Product Metrics")
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -331,7 +331,7 @@ def render_analysis():
     
     st.divider()
     
-    st.markdown("### 💡 Price Recommendation")
+    st.markdown("### Price Recommendation")
     
     avg_competitor_price = competitor_stats["avg_price"]
     min_competitive_price = min([c.get("price", 0) for c in competitors if isinstance(c.get("price"), (int, float)) and c.get("price") > 0] or [0])
@@ -346,6 +346,6 @@ def render_analysis():
         st.metric("Max Competitor Price", f"${max_competitive_price:.2f}")
     
     st.info(
-        f"💡 **Recommendation:** Consider pricing between ${min_competitive_price:.2f} and ${avg_competitor_price:.2f} "
+        f"*Recommendation:** Consider pricing between ${min_competitive_price:.2f} and ${avg_competitor_price:.2f} "
         f"to stay competitive while maintaining good margins."
     )

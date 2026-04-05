@@ -63,12 +63,7 @@ class UIRenderer:
     @staticmethod
     def render_header() -> None:
         """Render page header with title and description."""
-        st.markdown(
-            """
-            # 📊 Amazon Competitor Analysis
-            #### Analyze your Amazon products and monitor the competitive landscape
-            """
-        )
+        st.markdown("## Amazon Competitor Analysis")
 
     @staticmethod
     def render_input_section() -> Tuple[str, str, str]:
@@ -76,7 +71,7 @@ class UIRenderer:
         col1, col2, col3 = st.columns([1.5, 1, 1], gap="medium")
 
         with col1:
-            st.write("**🆔 ASIN**")
+            st.write("**ASIN**")
             asin = st.text_input(
                 "ASIN",
                 placeholder="B0CX23VSAS",
@@ -86,7 +81,7 @@ class UIRenderer:
             ).strip()
 
         with col2:
-            st.write("**📍 Zip Code**")
+            st.write("**Zip Code**")
             geo = st.text_input(
                 "Zip Code",
                 placeholder="83980",
@@ -96,7 +91,7 @@ class UIRenderer:
             ).strip()
 
         with col3:
-            st.write("**🌐 Domain**")
+            st.write("**Domain**")
             domain = st.selectbox(
                 "Domain",
                 ["com", "ca", "mx", "br", "uk", "de", "fr", "it", "es", "nl", "be", "se", "pl", "tr", "jp", "in", "sg", "ae", "sa", "eg", "com.au", "co.za"],
@@ -131,7 +126,7 @@ class UIRenderer:
                     if images and len(images) > 0:
                         st.image(images[0], width=250)
                     else:
-                        st.info("📷 No image available")
+                        st.info("No image available")
                 except Exception as e:
                     st.warning(f"Error loading image: {str(e)[:50]}")
 
@@ -146,31 +141,29 @@ class UIRenderer:
                     currency = competitor.get("currency", "$")
                     price = competitor.get("price", "N/A")
                     price_str = format_price(price, currency=currency, min_value=None)
-                    st.markdown("**💰 Price**")
-                    st.markdown(f"<span style='font-size: 1.5em;'>{price_str}</span>", unsafe_allow_html=True)
+                    st.markdown("<span style='font-size: 1.5em;'>**Price**</span>", unsafe_allow_html=True)
+                    st.markdown(f"<span style='font-size: 1.2em;'>{price_str}</span>", unsafe_allow_html=True)
 
                 with metric_cols[1]:
                     rating = competitor.get("rating", "N/A")
-                    rating_str = format_rating(rating, style="star_suffix")
-                    st.markdown("**⭐ Rating**")
-                    st.markdown(f"<span style='font-size: 1.5em;'>{rating_str}</span>", unsafe_allow_html=True)
+                    rating_str = f"{rating:.1f}/5" if isinstance(rating, (int, float)) else rating
+                    st.markdown("<span style='font-size: 1.5em;'>**Rating**</span>", unsafe_allow_html=True)
+                    st.markdown(f"<span style='font-size: 1.2em;'>{rating_str}</span>", unsafe_allow_html=True)
 
                 with metric_cols[2]:
                     brand = competitor.get("brand", "-")
                     brand_str = brand[:25] if isinstance(brand, str) else "-"
-                    st.markdown("**🏢 Brand**")
-                    st.markdown(f"<span style='font-size: 1.5em;'>{brand_str}</span>", unsafe_allow_html=True)
+                    st.markdown("<span style='font-size: 1.5em;'>**Brand**</span>", unsafe_allow_html=True)
+                    st.markdown(f"<span style='font-size: 1.2em;'>{brand_str}</span>", unsafe_allow_html=True)
 
                 with metric_cols[3]:
-                    stock = competitor.get("stock", "Unknown")
+                    stock = competitor.get("Availability", "Unknown")
                     stock_str = str(stock)[:25]
-                    st.markdown("**📦 Stock**")
-                    st.markdown(f"<span style='font-size: 1.5em;'>{stock_str}</span>", unsafe_allow_html=True)
-
-                st.caption(f"🔗 ASIN: {competitor.get('asin', 'N/A')}")
+                    st.markdown("<span style='font-size: 1.5em;'>**Stock**</span>", unsafe_allow_html=True)
+                    st.markdown(f"<span style='font-size: 1.2em;'>{stock_str}</span>", unsafe_allow_html=True)
 
                 if score is not None:
-                    st.caption(f"🏅 Score: {score:.0f}/110")
+                    st.caption(f"Score: {score:.0f}/110")
 
     @staticmethod
     def render_product_card(product: Dict[str, Any], db, service, index: int = 0) -> None:
@@ -185,51 +178,41 @@ class UIRenderer:
                     if images and len(images) > 0:
                         st.image(images[0], width=250)
                     else:
-                        st.info("📷 No image available")
+                        st.info("No image available")
                 except Exception as e:
                     st.warning(f"Error loading image: {str(e)[:50]}")
 
             # Product information
             with col_info:
                 title = product.get("title", product.get("asin", "Unknown"))
-                st.subheader(title[:80] + "..." if len(title) > 80 else title)
+                st.subheader(title[:100] + "..." if len(title) > 100 else title)
 
                 metric_cols = st.columns([1.2, 1, 1.5, 1.5])
 
                 with metric_cols[0]:
-                    currency = product.get("currency", "$")
+                    currency = product.get("currency")
                     price = product.get("price", "N/A")
                     price_str = format_price(price, currency=currency, min_value=None)
-                    st.markdown("**💰 Price**")
-                    st.markdown(f"<span style='font-size: 1.5em;'>{price_str}</span>", unsafe_allow_html=True)
+                    st.markdown("<span style='font-size: 1.5em;'>**Price**</span>", unsafe_allow_html=True)
+                    st.markdown(f"<span style='font-size: 1.2em;'>{price_str}</span>", unsafe_allow_html=True)
 
                 with metric_cols[1]:
                     rating = product.get("rating", "N/A")
-                    rating_str = format_rating(rating, style="star_suffix")
-                    st.markdown("**⭐ Rating**")
-                    st.markdown(f"<span style='font-size: 1.5em;'>{rating_str}</span>", unsafe_allow_html=True)
+                    rating_str = f"{rating:.1f}/5" if isinstance(rating, (int, float)) else rating
+                    st.markdown("<span style='font-size: 1.5em;'>**Rating**</span>", unsafe_allow_html=True)
+                    st.markdown(f"<span style='font-size: 1.2em;'>{rating_str}</span>", unsafe_allow_html=True)
 
                 with metric_cols[2]:
                     brand = product.get("brand", "-")
                     brand_str = brand[:25] if isinstance(brand, str) else "-"
-                    st.markdown("**🏢 Brand**")
-                    st.markdown(f"<span style='font-size: 1.5em;'>{brand_str}</span>", unsafe_allow_html=True)
+                    st.markdown("<span style='font-size: 1.5em;'>**Brand**</span>", unsafe_allow_html=True)
+                    st.markdown(f"<span style='font-size: 1.2em;'>{brand_str}</span>", unsafe_allow_html=True)
 
                 with metric_cols[3]:
-                    stock = product.get("stock", "Unknown")
+                    stock = product.get("Availability", "Unknown")
                     stock_str = str(stock)[:25]
-                    st.markdown("**📦 Stock**")
-                    st.markdown(f"<span style='font-size: 1.5em;'>{stock_str}</span>", unsafe_allow_html=True)
-
-                # Additional info
-                col_details = st.columns([1, 1])
-                with col_details[0]:
-                    domain_info = f"amazon.{product.get('amazon_domain', 'com')}"
-                    st.caption(f"🌐 Domain: {domain_info}")
-
-                with col_details[1]:
-                    geo_info = product.get("amazon_geo_location", "-")
-                    st.caption(f"📍 Geo: {geo_info}")
+                    st.markdown("<span style='font-size: 1.5em;'>**Stock**</span>", unsafe_allow_html=True)
+                    st.markdown(f"<span style='font-size: 1.2em;'>{stock_str}</span>", unsafe_allow_html=True)
 
                 # Category info
                 categories = product.get("categories", [])
@@ -241,14 +224,14 @@ class UIRenderer:
                     )
                     if cat_names:
                         cats_str = " • ".join(cat_names)
-                        st.caption(f"📂 Category: {cats_str}")
+                        st.caption(f"Category: {cats_str}")
 
                 # Action buttons
                 col_btn1, col_btn2 = st.columns(2)
                 
                 with col_btn1:
                     if st.button(
-                        "🔎 Find Competitors",
+                        "Find Competitors",
                         key=f"find_comp_{product['asin']}_{index}",
                         width='stretch',
                         type="primary",
@@ -257,7 +240,7 @@ class UIRenderer:
 
                 with col_btn2:
                     if st.button(
-                        "🗑️ Delete",
+                        "Delete product",
                         key=f"delete_{product['asin']}_{index}",
                         width='stretch',
                         type="secondary",
@@ -275,7 +258,7 @@ class UIRenderer:
                     product["asin"], domain, geo, pages=2
                 )
                 if results:
-                    st.success(f"✅ Stored {len(results)} competitors")
+                    st.success(f"Stored {len(results)} competitors")
                     st.rerun()
                 else:
                     st.warning("No competitors found")
@@ -287,7 +270,7 @@ class UIRenderer:
     def _handle_delete_product(product: Dict, db) -> None:
         """Handle deleting a product."""
         if db.delete_product(product["asin"]):
-            st.success(f"✅ Product {product['asin']} deleted")
+            st.success(f"Product {product['asin']} deleted")
             st.rerun()
         else:
             st.error("Failed to delete product")
