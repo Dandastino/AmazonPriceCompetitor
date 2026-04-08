@@ -68,7 +68,7 @@ def plot_pain_points_bar_chart(
         st.bar_chart(df.set_index('Aspect')['Negative Mentions'])
         
         # Data table
-        with st.expander("📊 View Detailed Data"):
+        with st.expander("View Detailed Data"):
             st.dataframe(df, width='stretch')
         
         logger.info(f"Plotted pain points bar chart with {len(aspects)} aspects")
@@ -160,11 +160,11 @@ def plot_gap_radar_chart(
             height=500
         )
         
-        st.subheader("🎯 Gap Map (Radar Chart)")
+        st.subheader("Gap Map (Radar Chart)")
         st.plotly_chart(fig, width='stretch')
         
         # Interpretation guide
-        with st.expander("ℹ️ How to Read This Chart"):
+        with st.expander("How to Read This Chart"):
             st.write("""
             - **Outer edge (1.0):** 100% positive sentiment
             - **Center (0.0):** 100% negative sentiment
@@ -260,7 +260,7 @@ def generate_complaint_word_cloud(
         word_freq = wordcloud.words_
         top_words = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)[:10]
         
-        with st.expander("📝 Top 10 Complaint Words"):
+        with st.expander("Top 10 Complaint Words"):
             word_df = pd.DataFrame(top_words, columns=['Word', 'Frequency'])
             word_df['Frequency'] = word_df['Frequency'].apply(lambda x: f"{x:.3f}")
             st.table(word_df)
@@ -296,7 +296,7 @@ def generate_aspect_word_clouds(
             st.info("No critical gaps to visualize")
             return
         
-        st.subheader("🔍 Word Clouds by Aspect")
+        st.subheader("Word Clouds by Aspect")
         
         for gap in critical_gaps[:top_n_aspects]:
             aspect = gap['aspect']
@@ -333,7 +333,7 @@ def generate_aspect_word_clouds(
                     relative_scaling=0.5
                 ).generate(cleaned)
                 
-                with st.expander(f"🔴 {aspect_display} ({gap['negative_count']} negative mentions)"):
+                with st.expander(f"{aspect_display} ({gap['negative_count']} negative mentions)"):
                     fig, ax = plt.subplots(figsize=(10, 5))
                     ax.imshow(wordcloud, interpolation='bilinear')
                     ax.axis('off')
@@ -461,7 +461,7 @@ def create_comparison_table(
         
         df = pd.DataFrame(comparison_data)
         
-        st.subheader("📊 Aspect Score Comparison")
+        st.subheader("Aspect Score Comparison")
         
         # Style the dataframe
         def highlight_winner(row):

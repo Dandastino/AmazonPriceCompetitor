@@ -278,12 +278,12 @@ def validate_api_key() -> bool:
     """Validate OpenAI API key at startup."""
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        logger.error("❌ OPENAI_API_KEY not set in environment")
+        logger.error("OPENAI_API_KEY not set in environment")
         return False
     if len(api_key) < 20:
-        logger.error("❌ OPENAI_API_KEY appears invalid (too short)")
+        logger.error("OPENAI_API_KEY appears invalid (too short)")
         return False
-    logger.info("✅ OpenAI API key validated")
+    logger.info("OpenAI API key validated")
     return True
 
 
@@ -301,7 +301,7 @@ class CompetitorAnalyzer:
         
         # Validate API key
         if not validate_api_key():
-            logger.warning("⚠️ API key validation failed - operations may fail")
+            logger.warning("API key validation failed - operations may fail")
 
     def _get_cache_key(self, asin: str) -> str:
         """Generate cache key for competitor analysis."""
@@ -400,7 +400,7 @@ class CompetitorAnalyzer:
             
             # Sort by score and return top N
             competitors.sort(key=lambda x: x["score"], reverse=True)
-            logger.info(f"📊 Found {len(competitors)} potential competitors, returning top {limit}")
+            logger.info(f"Found {len(competitors)} potential competitors, returning top {limit}")
             
             formatted = []
             for comp_item in competitors[:limit]:

@@ -68,7 +68,7 @@ class UIRenderer:
     @staticmethod
     def render_input_section() -> Tuple[str, str, str]:
         """Render input form for product and search parameters."""
-        col1, col2, col3 = st.columns([1.5, 1, 1], gap="medium")
+        col1, col2 = st.columns([1.5, 1, 1], gap="medium")
 
         with col1:
             st.write("**ASIN**")
@@ -81,16 +81,6 @@ class UIRenderer:
             ).strip()
 
         with col2:
-            st.write("**Zip Code**")
-            geo = st.text_input(
-                "Zip Code",
-                placeholder="83980",
-                help="Enter postal code",
-                label_visibility="collapsed",
-                key="zip_input"
-            ).strip()
-
-        with col3:
             st.write("**Domain**")
             domain = st.selectbox(
                 "Domain",
@@ -100,7 +90,7 @@ class UIRenderer:
                 key="domain_input"
             )
 
-        return asin, geo, domain
+        return asin, domain
 
     @staticmethod
     def create_product_options(products: List[Dict]) -> List[str]:
@@ -133,7 +123,7 @@ class UIRenderer:
             # Product information
             with col_info:
                 title = competitor.get("title", competitor.get("asin", "Unknown"))
-                st.subheader(title[:80] + "..." if len(title) > 80 else title)
+                st.subheader(title)
 
                 metric_cols = st.columns([1.2, 1, 1.5, 1.5])
 
@@ -157,9 +147,9 @@ class UIRenderer:
                     st.markdown(f"<span style='font-size: 1.2em;'>{brand_str}</span>", unsafe_allow_html=True)
 
                 with metric_cols[3]:
-                    stock = competitor.get("Availability", "Unknown")
+                    stock = competitor.get("Stock", "Unknown")
                     stock_str = str(stock)[:25]
-                    st.markdown("<span style='font-size: 1.5em;'>**Stock**</span>", unsafe_allow_html=True)
+                    st.markdown("<span style='font-size: 1.5em;'>**Availability**</span>", unsafe_allow_html=True)
                     st.markdown(f"<span style='font-size: 1.2em;'>{stock_str}</span>", unsafe_allow_html=True)
 
                 if score is not None:
@@ -185,7 +175,7 @@ class UIRenderer:
             # Product information
             with col_info:
                 title = product.get("title", product.get("asin", "Unknown"))
-                st.subheader(title[:100] + "..." if len(title) > 100 else title)
+                st.subheader(title)
 
                 metric_cols = st.columns([1.2, 1, 1.5, 1.5])
 
@@ -209,9 +199,9 @@ class UIRenderer:
                     st.markdown(f"<span style='font-size: 1.2em;'>{brand_str}</span>", unsafe_allow_html=True)
 
                 with metric_cols[3]:
-                    stock = product.get("Availability", "Unknown")
+                    stock = product.get("Stock", "Unknown")
                     stock_str = str(stock)[:25]
-                    st.markdown("<span style='font-size: 1.5em;'>**Stock**</span>", unsafe_allow_html=True)
+                    st.markdown("<span style='font-size: 1.5em;'>**Availability**</span>", unsafe_allow_html=True)
                     st.markdown(f"<span style='font-size: 1.2em;'>{stock_str}</span>", unsafe_allow_html=True)
 
                 # Category info
@@ -253,9 +243,8 @@ class UIRenderer:
         with st.spinner("Finding competitors..."):
             try:
                 domain = product.get("amazon_domain", "com")
-                geo = product.get("amazon_geo_location", "")
                 results = service.fetch_and_store_competitors(
-                    product["asin"], domain, geo, pages=2
+                    product["asin"], domain, pages=2
                 )
                 if results:
                     st.success(f"Stored {len(results)} competitors")
@@ -283,7 +272,7 @@ class UIRenderer:
         if f"page_{key_prefix}" not in st.session_state:
             st.session_state[f"page_{key_prefix}"] = 1
 
-        col_left, col_right = st.columns([3, 1])
+        col_right = st.columns([3, 1])
         with col_right:
             pagination_cols = st.columns([0.8, 0.8, 1.5])
             

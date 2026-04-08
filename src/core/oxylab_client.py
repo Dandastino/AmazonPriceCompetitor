@@ -3,20 +3,17 @@ import logging
 import os
 import re
 import time
-from typing import Dict, List, Optional, Any
-
 import requests
+from src.utils.common_utils import validate_not_empty
 import streamlit as st
-from dotenv import load_dotenv
 
+from dotenv import load_dotenv
+from typing import Dict, List, Optional, Any
 from src.utils import (
     get_logger,
     validate_string,
     validate_range,
-    validate_list,
     handle_exception,
-    progress_tracker,
-    UINotifier
 )
 
 load_dotenv()
@@ -45,22 +42,9 @@ class OxylabsClient:
 
         logger.info("OxylabsClient initialized")
 
+
     def post_query(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Post query to Oxylabs API with error handling.
-
-        Args:
-            payload: Query payload dict
-
-        Returns:
-            JSON response from API
-
-        Raises:
-            ValueError: Invalid credentials
-            ConnectionError: Network issue
-            TimeoutError: Request timeout
-            Exception: API error
-        """
+        """Post query to Oxylabs API with error handling."""
         try:
             logger.debug(f"Posting query to Oxylabs: {payload.get('source')}")
             response = requests.post(
@@ -92,6 +76,7 @@ class OxylabsClient:
             handle_exception(logger, e, show_ui=False)
             raise
 
+
     @staticmethod
     def extract_content(payload: Dict[str, Any]) -> Dict[str, Any]:
         """Extract product content from API response."""
@@ -105,26 +90,15 @@ class OxylabsClient:
                 content = first["content"]
                 return content if content else {}
 
-        # Fallback to direct content
         if "content" in payload:
             return payload.get("content", {})
 
         return {}
 
+
     @staticmethod
-    def normalize_product(content: Dict[str, Any], asin: str = "", domain: str = "", geo: str = "") -> Dict[str, Any]:
-        """
-        Normalize product data from API response.
-
-        Args:
-            content: Raw product content from API
-            asin: Product ASIN (fallback if not in content)
-            domain: Amazon domain
-            geo: Geographic location
-
-        Returns:
-            Normalized product dict
-        """
+    def normalize_product(content: Dict[str, Any], asin: str = "", domain: str = "") -> Dict[str, Any]:
+        """Normalize product data from API response."""
         if not isinstance(content, dict):
             content = {}
 
@@ -149,39 +123,26 @@ class OxylabsClient:
             "buybox": content.get("buybox", []),
             "product_overview": content.get("product_overview", []),
             "amazon_domain": domain,
-            "amazon_geo_location": geo,
         }
 
         return normalized
 
-    def scrape_product_details(self, asin: str, geo_location: str, domain: str) -> Optional[Dict[str, Any]]:
-        """
-        Scrape product details for a single ASIN.
-
-        Args:
-            asin: Product ASIN
-            geo_location: Geographic location (e.g., 'us')
-            domain: Amazon domain (e.g., 'com')
-
-        Returns:
-            Normalized product dict or None on failure
-        """
+    def scrape_product_details(self, asin: str, domain: str) -> Optional[Dict[str, Any]]:
+        """Scrape product details for a single ASIN."""
         try:
-            # Validate ASIN
-            validate_string(asin, "ASIN", allow_empty=False)
+            validate_not_empty(asin, "ASIN", str)
 
             payload = {
                 "source": "amazon_product",
                 "query": asin,
-                "geo_location": geo_location,
                 "domain": domain,
                 "parse": True,
             }
 
-            logger.info(f"Scraping product: {asin} for {domain}/{geo_location}")
+            logger.info(f"Scraping product: {asin} for {domain}")
             raw = self.post_query(payload)
             content = self.extract_content(raw)
-            normalized = self.normalize_product(content, asin, domain, geo_location)
+            normalized = self.normalize_product(content, asin, domain)
 
             if not normalized.get("title"):
                 logger.warning(f"No title found for ASIN {asin}")
@@ -196,6 +157,7 @@ class OxylabsClient:
             handle_exception(logger, e, show_ui=False)
             raise
 
+
     @staticmethod
     def clean_product_name(title: str) -> str:
         """Clean product title for search queries."""
@@ -209,6 +171,7 @@ class OxylabsClient:
         # Split on common delimiters and keep left part
         parts = re.split(r"\s*[-|:]\s*", cleaned, maxsplit=1)
         return parts[0].strip()
+
 
     @staticmethod
     def extract_search_results(content: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -233,6 +196,7 @@ class OxylabsClient:
         logger.debug(f"Extracted {len(items)} search result items")
         return items
 
+
     @staticmethod
     def normalize_search_result(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Normalize a single search result."""
@@ -249,11 +213,68 @@ class OxylabsClient:
             "asin": asin,
             "title": title,
             "categories": item.get("categories"),
+            "category_path": item.get("category_path", []),
             "price": item.get("price"),
             "rating": item.get("rating"),
             "url": item.get("url", ""),
             "images": item.get("images", []),
         }
+
+    @staticmethod
+    def infer_search_product_type(query_title: str, categories: List[str]) -> Optional[str]:
+        """Infer the target product type from categories or title."""
+        # Prefer title-based inference for specificity
+        if isinstance(query_title, str) and query_title.strip():
+            cleaned = re.sub(r"[^A-Za-z0-9\s]", " ", query_title).strip()
+            parts = [part for part in cleaned.split() if part and len(part) > 2]  # Skip short words
+            if parts:
+                # Take first 2-3 meaningful words
+                product_words = []
+                for part in parts[:4]:
+                    if part.lower() not in ['the', 'and', 'for', 'with', 'black', 'white', 'red', 'blue']:
+                        product_words.append(part)
+                        if len(product_words) >= 2:
+                            break
+                if product_words:
+                    return " ".join(product_words)
+
+        # Fallback to last category if title doesn't work
+        if categories:
+            last_category = categories[-1]
+            if isinstance(last_category, str) and last_category.strip():
+                return last_category.strip()
+
+        return None
+
+    @staticmethod
+    def _tokenize_text(value: Any) -> set:
+        return set(re.findall(r"\w+", str(value).lower()))
+
+    @classmethod
+    def _matches_product_type(cls, item: Dict[str, Any], product_type: Optional[str]) -> bool:
+        if not product_type:
+            return True
+
+        product_type_lower = product_type.lower()
+        title = item.get("title", "").lower()
+
+        # Check if product_type words appear in title
+        product_words = product_type_lower.split()
+        matching_words = sum(1 for word in product_words if word in title)
+        if matching_words >= len(product_words) // 2 + 1:  # At least half +1 words match
+            logger.debug(f"Product type match: '{product_type}' matches title '{item.get('title', '')}'")
+            return True
+
+        # Check categories
+        categories = item.get("categories") or []
+        category_path = item.get("category_path") or []
+        combined = " ".join([str(c).lower() for c in categories + category_path])
+        if any(word in combined for word in product_words):
+            logger.debug(f"Product type match: '{product_type}' matches categories '{combined}'")
+            return True
+
+        logger.debug(f"No product type match: '{product_type}' not in title '{item.get('title', '')}' or categories")
+        return False
 
     def search_competitors(
         self,
@@ -261,30 +282,21 @@ class OxylabsClient:
         domain: str,
         categories: List[str],
         pages: int = 1,
-        geo_location: str = "",
+        product_type: Optional[str] = None,
         show_progress: bool = True,
     ) -> List[Dict[str, Any]]:
-        """
-        Search for competitor products.
-
-        Args:
-            query_title: Product title to search
-            domain: Amazon domain
-            categories: Category filters
-            pages: Number of pages to search
-            geo_location: Geographic location
-
-        Returns:
-            List of normalized search results
-        """
+        """Search for competitor products."""
         try:
             # Validate inputs
             validate_string(query_title, "query_title", allow_empty=False)
             validate_range(pages, "pages", min_val=1, max_val=5)
 
             if show_progress:
-                st.write("🔎 Searching for competitors")
+                st.write("Searching for competitors")
             search_title = self.clean_product_name(query_title)
+            target_product_type = product_type or self.infer_search_product_type(query_title, categories)
+            if target_product_type and target_product_type.lower() not in search_title.lower():
+                search_title = f"{target_product_type} {search_title}"
             results = []
             seen_asins = set()
 
@@ -293,7 +305,7 @@ class OxylabsClient:
             progress_text = st.empty() if show_progress else None
             req_count = 0
 
-            logger.info(f"Starting competitor search: '{search_title}' in {domain}/{geo_location}")
+            logger.info(f"Starting competitor search: '{search_title}' in {domain}")
 
             for strategy_idx, sort_by in enumerate(SEARCH_STRATEGIES):
                 for page in range(1, pages + 1):
@@ -302,15 +314,14 @@ class OxylabsClient:
                             "source": "amazon_search",
                             "query": search_title,
                             "domain": domain,
-                            "geo_location": geo_location,
                             "categories": categories,
                             "sort_by": sort_by,
                             "page": page,
                             "parse": True,
                         }
 
-                        if categories and categories[0]:
-                            payload["refinement"] = {"category": categories[0]}
+                        if categories and categories[-1]:
+                            payload["refinement"] = {"category": categories[-1]}
 
                         req_count += 1
                         if show_progress:
@@ -322,16 +333,19 @@ class OxylabsClient:
 
                         for item in items:
                             normalized = self.normalize_search_result(item)
-                            if normalized and normalized["asin"] not in seen_asins:
-                                seen_asins.add(normalized["asin"])
-                                results.append(normalized)
+                            if not normalized or normalized["asin"] in seen_asins:
+                                continue
+                            if not self._matches_product_type(normalized, target_product_type):
+                                continue
+                            seen_asins.add(normalized["asin"])
+                            results.append(normalized)
 
                         time.sleep(RATE_LIMIT_DELAY)  # Rate limiting
 
                     except Exception as e:
                         logger.warning(f"Error in search strategy {sort_by}, page {page}: {e}")
                         if show_progress:
-                            progress_text.write(f"⚠️ Error in strategy {sort_by}: {str(e)[:50]}")
+                            progress_text.write(f"Error in strategy {sort_by}: {str(e)[:50]}")
                         continue
 
             if show_progress:
@@ -339,7 +353,7 @@ class OxylabsClient:
                 progress_text.empty()
 
             if show_progress:
-                st.write(f"✅ Found {len(results)} competitors")
+                st.write(f"Found {len(results)} competitors")
             logger.info(f"Competitor search complete: {len(results)} results")
             return results
 
@@ -348,25 +362,14 @@ class OxylabsClient:
             st.error(f"Error searching competitors: {str(e)}")
             return []
 
-    def scrape_multiple_products(
-        self, asins: List[str], geo_location: str, domain: str
-    ) -> List[Dict[str, Any]]:
-        """
-        Scrape details for multiple products.
 
-        Args:
-            asins: List of product ASINs
-            geo_location: Geographic location
-            domain: Amazon domain
-
-        Returns:
-            List of normalized product dicts
-        """
+    def scrape_multiple_products(self, asins: List[str], domain: str) -> List[Dict[str, Any]]:
+        """Scrape details for multiple products.        """
         if not asins or not isinstance(asins, list):
             logger.warning(f"Invalid asins input: {asins}")
             return []
 
-        st.write(f"🔎 Scraping {len(asins)} products from {geo_location} ({domain})")
+        st.write(f"🔎 Scraping {len(asins)} products from ({domain})")
 
         products = []
         progress_text = st.empty()
@@ -379,51 +382,32 @@ class OxylabsClient:
                 progress_text.write(f"Processing {idx}/{len(asins)}: {asin}")
                 progress_bar.progress(idx / len(asins))
 
-                product = self.scrape_product_details(asin, geo_location, domain)
+                product = self.scrape_product_details(asin, domain)
                 products.append(product)
-                progress_text.write(f"✅ {product.get('title', asin)[:50]}")
+                progress_text.write(f"{product.get('title', asin)[:50]}")
 
                 time.sleep(RATE_LIMIT_DELAY)
 
             except Exception as e:
                 logger.error(f"Error scraping {asin}: {e}")
-                progress_text.write(f"❌ Error: {asin} - {str(e)[:40]}")
+                progress_text.write(f"Error: {asin} - {str(e)[:40]}")
                 continue
 
         progress_text.empty()
         progress_bar.empty()
 
-        st.write(f"✅ Scraped {len(products)}/{len(asins)} products successfully")
+        st.write(f"Scraped {len(products)}/{len(asins)} products successfully")
         logger.info(f"Scraping complete: {len(products)}/{len(asins)} products")
         return products
     
-    def scrape_product_reviews(
-        self, 
-        asin: str, 
-        geo_location: str, 
-        domain: str,
-        max_reviews: int = 50,
-        show_progress: bool = True
-    ) -> List[Dict[str, Any]]:
-        """
-        Scrape reviews for a product.
-
-        Args:
-            asin: Product ASIN
-            geo_location: Geographic location
-            domain: Amazon domain
-            max_reviews: Maximum number of reviews to scrape
-            show_progress: Show progress in UI
-
-        Returns:
-            List of review dicts with text, rating, title, etc.
-        """
+    def scrape_product_reviews(self, asin: str, domain: str,max_reviews: int = 50,show_progress: bool = True) -> List[Dict[str, Any]]:
+        """Scrape reviews for a product."""
         try:
             if not asin or not isinstance(asin, str):
                 raise ValueError(f"Invalid ASIN: {asin}")
 
             if show_progress:
-                st.write(f"📝 Scraping reviews for {asin}...")
+                st.write(f"Scraping reviews for {asin}...")
 
             reviews = []
             pages_needed = (max_reviews // 10) + 1  # Amazon shows ~10 reviews per page
@@ -445,7 +429,6 @@ class OxylabsClient:
                     payload = {
                         "source": "amazon",
                         "url": product_url,
-                        "geo_location": geo_location,
                         "parse": True,
                         "start_page": page,
                     }
@@ -479,7 +462,7 @@ class OxylabsClient:
             if show_progress:
                 progress_bar.empty()
                 progress_text.empty()
-                st.write(f"✅ Scraped {len(reviews)} reviews")
+                st.write(f"Scraped {len(reviews)} reviews")
 
             logger.info(f"Successfully scraped {len(reviews)} reviews for {asin}")
             return reviews
@@ -533,38 +516,21 @@ def get_client() -> OxylabsClient:
     return _client
 
 
-def scrape_product_details(asin: str, geo_location: str, domain: str) -> Optional[Dict[str, Any]]:
+def scrape_product_details(asin: str, domain: str) -> Optional[Dict[str, Any]]:
     """Scrape product details (uses OxylabsClient)."""
-    return get_client().scrape_product_details(asin, geo_location, domain)
+    return get_client().scrape_product_details(asin, domain)
 
 
-def search_competitors(
-    query_title: str,
-    domain: str,
-    categories: List[str],
-    pages: int = 1,
-    geo_location: str = "",
-    show_progress: bool = True,
-) -> List[Dict[str, Any]]:
+def search_competitors(query_title: str,domain: str,categories: List[str],pages: int = 1, product_type: Optional[str] = None,show_progress: bool = True,) -> List[Dict[str, Any]]:
     """Search competitors (uses OxylabsClient)."""
-    return get_client().search_competitors(
-        query_title, domain, categories, pages, geo_location, show_progress
-    )
+    return get_client().search_competitors(query_title=query_title,domain=domain,categories=categories,pages=pages,product_type=product_type,show_progress=show_progress,)
 
 
-def scrape_multiple_products(asins: List[str], geo_location: str, domain: str) -> List[Dict[str, Any]]:
+def scrape_multiple_products(asins: List[str], domain: str) -> List[Dict[str, Any]]:
     """Scrape multiple products (uses OxylabsClient)."""
-    return get_client().scrape_multiple_products(asins, geo_location, domain)
+    return get_client().scrape_multiple_products(asins, domain)
 
 
-def scrape_product_reviews(
-    asin: str, 
-    geo_location: str, 
-    domain: str,
-    max_reviews: int = 50,
-    show_progress: bool = True
-) -> List[Dict[str, Any]]:
+def scrape_product_reviews(asin: str, domain: str,max_reviews: int = 50,show_progress: bool = True) -> List[Dict[str, Any]]:
     """Scrape product reviews (uses OxylabsClient)."""
-    return get_client().scrape_product_reviews(asin, geo_location, domain, max_reviews, show_progress)
-
-
+    return get_client().scrape_product_reviews(asin, domain, max_reviews, show_progress)

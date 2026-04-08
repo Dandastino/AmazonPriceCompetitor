@@ -57,7 +57,10 @@ def render():
     st.divider()
     st.markdown(f"### Total Competitors: {len(ordered_competitors)}")
     
-    page = ui.render_pagination(len(ordered_competitors), items_per_page=10, key_prefix="competitors")
+    if "page_competitors" not in st.session_state:
+        st.session_state["page_competitors"] = 1
+    
+    page = st.session_state["page_competitors"]
     start_idx = (page - 1) * 10
     end_idx = min(start_idx + 10, len(ordered_competitors))
     
@@ -72,6 +75,9 @@ def render():
     
     st.divider()
     st.markdown("### Export Data")
+    
+    # Pagination at the end
+    ui.render_pagination(len(ordered_competitors), items_per_page=10, key_prefix="competitors")
     
     comparison_data = []
     for item in ordered_competitors:

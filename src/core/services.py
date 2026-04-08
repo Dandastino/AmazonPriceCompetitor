@@ -1,8 +1,8 @@
+from src.utils.common_utils import validate_not_empty
 import logging
-from typing import List, Dict, Any, Optional
-
 import streamlit as st
 
+from typing import List, Dict, Any, Optional
 from .mongodb import MongoDB
 from src.core.oxylab_client import (
     scrape_product_details,
@@ -16,6 +16,7 @@ from src.utils import (
     validate_string,
     validate_range,
     UINotifier,
+    validate_not_empty,
     handle_exception
 )
 
@@ -29,34 +30,20 @@ class ProductService:
         """Initialize service with MongoDB connection."""
         self.db = MongoDB()
 
-    def scrape_and_store_product(
-        self, asin: str, geo_location: str, domain: str
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Scrape product details and store in database.
-
-        Args:
-            asin: Product ASIN
-            geo_location: Geographic location
-            domain: Amazon domain
-
-        Returns:
-            Product data dict or None on failure
-        """
+    def scrape_and_store_product(self, asin: str, domain: str) -> Optional[Dict[str, Any]]:
+        """Scrape product details and store in database."""
         try:
-            # Validate ASIN
-            validate_string(asin, "ASIN", allow_empty=False)
+            validate_not_empty(asin, "ASIN", str)
 
             UINotifier.info(f"Scraping product: {asin} from amazon.{domain}")
             
             try:
-                data = scrape_product_details(asin, geo_location, domain)
+                data = scrape_product_details(asin, domain)
             except Exception as scrape_error:
                 UINotifier.error(f"Failed to scrape product - {str(scrape_error)}")
                 logger.error(f"Scraping failed for {asin}: {scrape_error}")
                 return None
 
-            # Validate that we actually got product data
             if not data:
                 UINotifier.error(f"No product data returned. ASIN '{asin}' may not exist on amazon.{domain}")
                 logger.error(f"No data returned for ASIN {asin}")
@@ -93,31 +80,14 @@ class ProductService:
             handle_exception(logger, e, "Unexpected error. Please check your ASIN and try again.")
             return None
 
-    def fetch_and_store_competitors(
-        self,
-        parent_asin: str,
-        domain: str,
-        geo_location: str,
-        pages: int = 2,
-    ) -> List[Dict[str, Any]]:
-        """
-        Fetch competitors for a product and store them.
 
-        Args:
-            parent_asin: Parent product ASIN
-            domain: Amazon domain
-            geo_location: Geographic location
-            pages: Number of search pages to query
-
-        Returns:
-            List of stored competitor products
-        """
+    def fetch_and_store_competitors(self, parent_asin: str, domain: str, pages: int = 2,) -> List[Dict[str, Any]]:
+        """Fetch competitors for a product and store them."""
         try:
-            # Validate inputs
-            validate_string(parent_asin, "parent_asin", allow_empty=False)
+            validate_not_empty(parent_asin, "parent_asin", str)
             validate_range(pages, "pages", min_val=1, max_val=5)
 
-            st.write(f"🔍 Fetching parent product: {parent_asin}")
+            st.write(f"Fetching parent product: {parent_asin}")
 
             # Fetch parent product (main product only)
             parent = self.db.get_product(parent_asin)
@@ -128,9 +98,8 @@ class ProductService:
 
             # Get search parameters from parent
             search_domain = parent.get("amazon_domain", domain)
-            search_geo = parent.get("amazon_geo_location", geo_location)
 
-            st.write(f"🌍 Searching domain: {search_domain} | Region: {search_geo}")
+            st.write(f"Searching domain: {search_domain}")
 
             # Extract and clean categories
             search_categories = self._extract_categories(parent)
@@ -139,11 +108,15 @@ class ProductService:
                 logger.warning(f"No categories found for {parent_asin}")
                 return []
 
-            st.write(f"📂 Searching in categories: {search_categories[:3]}")
+            product_type = self._extract_product_type(parent)
+            if product_type:
+                st.write(f"Target product type: {product_type}")
+
+            st.write(f"Searching in categories: {search_categories[:3]}")
 
             # Search competitors across categories
             all_results = self._search_across_categories(
-                parent, search_categories, search_domain, search_geo, pages
+                parent, search_categories, search_domain, pages, product_type
             )
 
             if not all_results:
@@ -157,11 +130,11 @@ class ProductService:
                 st.warning("No valid competitor ASINs extracted")
                 return []
 
-            st.write(f"🎯 Found {len(competitor_asins)} unique competitors")
+            st.write(f"Found {len(competitor_asins)} competitors")
 
             # Scrape and store competitors
             stored_competitors = self._scrape_and_store_competitors(
-                competitor_asins, parent_asin, search_geo, search_domain
+                competitor_asins, parent_asin, search_domain
             )
 
             # Display results
@@ -178,39 +151,41 @@ class ProductService:
         """Extract and clean categories from parent product."""
         return extract_product_categories(parent, max_items=5)
 
-    def _search_across_categories(
-        self,
-        parent: Dict[str, Any],
-        categories: List[str],
-        domain: str,
-        geo_location: str,
-        pages: int,
-    ) -> List[Dict[str, Any]]:
+    def _extract_product_type(self, parent: Dict[str, Any]) -> Optional[str]:
+        """Infer the main product type from categories or title."""
+        categories = self._extract_categories(parent)
+        if categories:
+            return categories[-1]
+        title = parent.get("title", "")
+        if isinstance(title, str) and title.strip():
+            words = title.strip().split()
+            return " ".join(words[:3])
+        return None
+
+    def _search_across_categories(self, parent: Dict[str, Any], categories: List[str], domain: str, pages: int, product_type: Optional[str] = None) -> List[Dict[str, Any]]:
         """Search competitors across all categories."""
         all_results = []
         progress_bar = st.progress(0)
 
-        for idx, category in enumerate(categories[:3]):  # Limit to 3 categories
+        st.write(f"Searching throw the categorys: {categories[0:]}")
+        for idx, category in enumerate(categories[0:]):
             try:
-                st.write(f"📂 Searching category: {category}")
                 search_result = search_competitors(
                     query_title=parent.get("title", ""),
                     domain=domain,
                     categories=[category],
                     pages=pages,
-                    geo_location=geo_location,
+                    product_type=product_type,
                 )
                 all_results.extend(search_result or [])
-                progress_bar.progress((idx + 1) / 3)
+                progress_bar.progress((idx + 1) / len(categories))
             except Exception as e:
                 logger.error(f"Error searching category {category}: {e}")
-                st.warning(f"Error searching category {category}: {str(e)}")
+                st.error(f"Error searching category {category}: {str(e)}")
 
         return all_results
 
-    def _extract_unique_competitors(
-        self, all_results: List[Dict[str, Any]], parent_asin: str
-    ) -> List[str]:
+    def _extract_unique_competitors(self, all_results: List[Dict[str, Any]], parent_asin: str) -> List[str]:
         """Extract unique valid competitor ASINs."""
         competitors = set()
 
@@ -231,7 +206,7 @@ class ProductService:
         return list(competitors)
 
     def _scrape_and_store_competitors(
-        self, competitor_asins: List[str], parent_asin: str, geo_location: str, domain: str
+        self, competitor_asins: List[str], parent_asin: str, domain: str
     ) -> List[Dict[str, Any]]:
         """Scrape and store competitor products in competitors collection."""
         stored = []
@@ -239,7 +214,7 @@ class ProductService:
 
         for idx, asin in enumerate(competitor_asins):
             try:
-                details = scrape_product_details(asin, geo_location, domain)
+                details = scrape_product_details(asin, domain)
                 if details:
                     # Store as competitor (separate collection)
                     self.db.add_competitor(details, parent_asin)
@@ -256,7 +231,7 @@ class ProductService:
     def _display_competitor_results(self, competitors: List[Dict[str, Any]]) -> None:
         """Display competitor results in Streamlit UI."""
         st.markdown("---")
-        st.subheader(f"✅ Stored {len(competitors)} Competitors")
+        st.subheader(f"Stored {len(competitors)} Competitors")
 
         for competitor in competitors:
             try:
@@ -285,15 +260,15 @@ class ProductService:
 
 
 # Backward-compatible function interfaces
-def scrape_and_store_product(asin: str, geo_location: str, domain: str) -> Optional[Dict[str, Any]]:
+def scrape_and_store_product(asin: str, domain: str) -> Optional[Dict[str, Any]]:
     """Scrape and store product (uses ProductService)."""
     service = ProductService()
-    return service.scrape_and_store_product(asin, geo_location, domain)
+    return service.scrape_and_store_product(asin, domain)
 
 
 def fetch_and_store_competitors(
-    parent_asin: str, domain: str, geo_location: str, pages: int = 2
+    parent_asin: str, domain: str, pages: int = 2
 ) -> List[Dict[str, Any]]:
     """Fetch and store competitors (uses ProductService)."""
     service = ProductService()
-    return service.fetch_and_store_competitors(parent_asin, domain, geo_location, pages)
+    return service.fetch_and_store_competitors(parent_asin, domain, pages)

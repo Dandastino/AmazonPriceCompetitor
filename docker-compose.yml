@@ -13,20 +13,17 @@ services:
       # MongoDB configuration
       - mongodb_config:/data/configdb
     restart: unless-stopped
+    network_mode: host
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 20s
-    networks:
-      - app-network
 
   # Streamlit Application
   amazon-competitor-analysis:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: amazon-competitor-analysis
     container_name: amazon-competitor-analyzer
     ports:
       - "8501:8501"
@@ -34,13 +31,14 @@ services:
       - OXYLAB_USERNAME=${OXYLAB_USERNAME}
       - OXYLAB_PASSWORD=${OXYLAB_PASSWORD}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - MONGODB_URI=mongodb://mongodb:27017/
+      - MONGODB_URI=mongodb://localhost:27017/
     volumes:
       # Mount data directory for backups/exports
       - ./data:/app/data
       # Mount .env file for environment variables
       - ./.env:/app/.env:ro
     restart: unless-stopped
+    network_mode: host
     depends_on:
       mongodb:
         condition: service_healthy
@@ -50,12 +48,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    networks:
-      - app-network
-
-networks:
-  app-network:
-    driver: bridge
 
 volumes:
   # MongoDB data persistence

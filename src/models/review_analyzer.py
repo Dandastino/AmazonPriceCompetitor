@@ -48,7 +48,6 @@ class ReviewAnalyzer:
         self,
         asin: str,
         product_title: str,
-        geo_location: str,
         domain: str,
         max_reviews: int = 50,
         product_category: Optional[str] = None,
@@ -60,7 +59,6 @@ class ReviewAnalyzer:
         Args:
             asin: Product ASIN
             product_title: Product name
-            geo_location: Geographic location
             domain: Amazon domain
             max_reviews: Maximum reviews to analyze
             product_category: Optional product category for better ABSA
@@ -77,7 +75,6 @@ class ReviewAnalyzer:
             logger.info(f"Starting review analysis for {asin}")
             reviews = scrape_product_reviews(
                 asin=asin,
-                geo_location=geo_location,
                 domain=domain,
                 max_reviews=max_reviews,
                 show_progress=show_progress
@@ -163,7 +160,6 @@ class ReviewAnalyzer:
     def analyze_multiple_competitors(
         self,
         competitors: List[Dict[str, Any]],
-        geo_location: str,
         domain: str,
         max_reviews_per_product: int = 50,
         product_category: Optional[str] = None
@@ -173,7 +169,6 @@ class ReviewAnalyzer:
         
         Args:
             competitors: List of competitor dicts with 'asin' and 'title'
-            geo_location: Geographic location
             domain: Amazon domain
             max_reviews_per_product: Max reviews per product
             product_category: Optional product category
@@ -196,7 +191,6 @@ class ReviewAnalyzer:
                 analysis = self.analyze_competitor_product(
                     asin=asin,
                     product_title=title,
-                    geo_location=geo_location,
                     domain=domain,
                     max_reviews=max_reviews_per_product,
                     product_category=product_category,

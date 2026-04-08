@@ -92,12 +92,10 @@ def render_review_analysis():
                 
                 asin = product.get("asin")
                 domain = product.get("amazon_domain", "com")
-                geo = product.get("amazon_geo_location", "")
                 
                 reviews = scrape_product_reviews(
                     asin=asin,
                     domain=domain,
-                    geo_location=geo,
                     max_reviews=max_reviews,
                     show_progress=True
                 )
@@ -130,7 +128,6 @@ def render_review_analysis():
                     result = analyzer.analyze_competitor_product(
                         asin=product.get("asin"),
                         product_title=product.get("title", "Unknown"),
-                        geo_location=product.get("amazon_geo_location", ""),
                         domain=product.get("amazon_domain", "com"),
                         max_reviews=len(reviews),
                         show_progress=True

@@ -18,7 +18,7 @@ def _render_sidebar():
         st.header("Scrape Product")
         
         service = ProductService()
-        asin, geo, domain = ui.render_input_section()
+        asin, domain = ui.render_input_section()
 
         if st.button("Scrape Product", width='stretch', type="primary"):
             if not asin:
@@ -26,7 +26,7 @@ def _render_sidebar():
             else:
                 with st.spinner("Scraping product from Amazon..."):
                     try:
-                        result = service.scrape_and_store_product(asin, geo, domain)
+                        result = service.scrape_and_store_product(asin, domain)
                         if result:
                             st.rerun()
                     except Exception as e:

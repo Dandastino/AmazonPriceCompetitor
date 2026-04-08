@@ -12,14 +12,7 @@ class AnalyticsEngine:
 
     @staticmethod
     def score_competitors(competitors: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Score and rank competitors based on multiple criteria.
-        
-        Args:
-            competitors: List of competitor dictionaries
-            
-        Returns:
-            List of scored competitors with ranking details
-        """
+        """Score and rank competitors based on multiple criteria."""
         if not competitors:
             return []
         
@@ -37,17 +30,17 @@ class AnalyticsEngine:
                 max_reviews = max([c.get("reviews_count") or c.get("num_reviews") or 0 for c in competitors]) or 1
                 reviews_score = (reviews / max_reviews) * 40
                 score += reviews_score
-                details.append(f"👥 Bought: {int(reviews)} ({reviews_score:.0f} pts)")
+                details.append(f"Bought: {int(reviews)} ({reviews_score:.0f} pts)")
             else:
                 missing_critical = True
-                details.append("⚠️ Missing reviews")
+                details.append("Missing reviews")
             
             # 2. Rating (35 points max)
             rating = competitor.get("rating", 0)
             if isinstance(rating, (int, float)):
                 rating_score = (rating / 5) * 35
                 score += rating_score
-                details.append(f"⭐ Rating: {rating:.1f}/5 ({rating_score:.0f} pts)")
+                details.append(f"Rating: {rating:.1f}/5 ({rating_score:.0f} pts)")
             
             # 3. Price (20 points max - lower price = higher score)
             price = competitor.get("price", 0)
@@ -58,10 +51,10 @@ class AnalyticsEngine:
                 price_score = ((max_price - price) / max_price) * 20 if max_price > 0 else 0
                 score += price_score
                 currency = competitor.get("currency", "$")
-                details.append(f"💰 Price: {currency}{price:.2f} ({price_score:.0f} pts)")
+                details.append(f"Price: {currency}{price:.2f} ({price_score:.0f} pts)")
             else:
                 missing_critical = True
-                details.append("⚠️ Missing price")
+                details.append("Missing price")
             
             # 4. Stock availability (15 points max)
             stock = competitor.get("stock", "Unknown")
@@ -105,14 +98,14 @@ class AnalyticsEngine:
                 max_reviews = max([p.get("reviews_count") or p.get("num_reviews") or 0 for p in products]) or 1
                 reviews_score = (reviews / max_reviews) * 40
                 score += reviews_score
-                details.append(f"👥 Bought: {int(reviews)} ({reviews_score:.0f} pts)")
+                details.append(f"Bought: {int(reviews)} ({reviews_score:.0f} pts)")
             
             # 2. Rating (35 points max)
             rating = product.get("rating", 0)
             if isinstance(rating, (int, float)):
                 rating_score = (rating / 5) * 35
                 score += rating_score
-                details.append(f"⭐ Rating: {rating:.1f}/5 ({rating_score:.0f} pts)")
+                details.append(f"Rating: {rating:.1f}/5 ({rating_score:.0f} pts)")
             
             # 3. Price (20 points max)
             price = product.get("price", 0)
@@ -122,7 +115,7 @@ class AnalyticsEngine:
                 price_score = ((max_price - price) / max_price) * 20 if max_price > 0 else 0
                 score += price_score
                 currency = product.get("currency", "$")
-                details.append(f"💰 Price: {currency}{price:.2f} ({price_score:.0f} pts)")
+                details.append(f"Price: {currency}{price:.2f} ({price_score:.0f} pts)")
             
             # 4. Stock availability (15 points max)
             stock = product.get("stock", "Unknown")

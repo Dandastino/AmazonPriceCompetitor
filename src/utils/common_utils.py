@@ -1,12 +1,4 @@
-"""
-Common utilities for DRY principles across the project.
-
-This module provides:
-1. Error handling helpers
-2. Validation functions
-3. Streamlit UI helpers
-4. Progress bar context manager
-"""
+"""Common utilities for DRY principles across the project."""
 
 import logging
 from typing import Any, Callable, Optional, TypeVar, Type, List
@@ -16,31 +8,14 @@ from datetime import datetime
 
 import streamlit as st
 
-
 T = TypeVar('T')
-
 
 # ============================================================================
 # Error Handling Helpers
 # ============================================================================
 
-def handle_exception(
-    logger: logging.Logger,
-    error: Exception,
-    user_message: Optional[str] = None,
-    show_ui: bool = True,
-    log_traceback: bool = True
-) -> None:
-    """
-    Centralized exception handling with logging and UI feedback.
-    
-    Args:
-        logger: Logger instance
-        error: Exception to handle
-        user_message: Custom message for user (defaults to error message)
-        show_ui: Whether to show error in Streamlit UI
-        log_traceback: Whether to log full traceback
-    """
+def handle_exception(logger: logging.Logger, error: Exception, user_message: Optional[str] = None, show_ui: bool = True, log_traceback: bool = True) -> None:
+    """Centralized exception handling with logging and UI feedback."""
     # Log the error
     error_msg = str(error)
     if log_traceback:
@@ -54,26 +29,8 @@ def handle_exception(
         st.error(display_msg)
 
 
-def safe_execute(
-    logger: logging.Logger,
-    default_return: Any = None,
-    user_message: Optional[str] = None,
-    show_ui: bool = True
-):
-    """
-    Decorator for safe function execution with centralized error handling.
-    
-    Usage:
-        @safe_execute(logger, default_return=[], user_message="Failed to load data")
-        def my_function():
-            # your code here
-    
-    Args:
-        logger: Logger instance
-        default_return: Value to return on exception
-        user_message: Custom error message for user
-        show_ui: Whether to show error in UI
-    """
+def safe_execute(logger: logging.Logger, default_return: Any = None, user_message: Optional[str] = None, show_ui: bool = True):
+    """Decorator for safe function execution with centralized error handling."""
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -90,52 +47,18 @@ def safe_execute(
 # Validation Helpers
 # ============================================================================
 
-def validate_not_empty(
-    value: Any,
-    var_name: str,
-    expected_type: Optional[Type] = None
-) -> bool:
-    """
-    Validate that a value is not None/empty and optionally check type.
-    
-    Args:
-        value: Value to validate
-        var_name: Variable name for error message
-        expected_type: Expected type (e.g., str, list, dict)
-    
-    Returns:
-        True if valid
-        
-    Raises:
-        ValueError: If validation fails
-    """
+def validate_not_empty(value: Any, var_name: str, expected_type: Optional[Type] = None) -> bool:
+    """Validate that a value is not None/empty and optionally check type."""
     if not value:
         raise ValueError(f"{var_name} cannot be empty or None")
     
     if expected_type and not isinstance(value, expected_type):
-        raise ValueError(
-            f"{var_name} must be of type {expected_type.__name__}, "
-            f"got {type(value).__name__}"
-        )
-    
+        raise ValueError(f"{var_name} must be of type {expected_type.__name__}, got {type(value).__name__}")
     return True
 
 
 def validate_string(value: Any, var_name: str, allow_empty: bool = False) -> bool:
-    """
-    Validate that a value is a valid string.
-    
-    Args:
-        value: Value to validate
-        var_name: Variable name for error message
-        allow_empty: Whether empty strings are allowed
-    
-    Returns:
-        True if valid
-        
-    Raises:
-        ValueError: If validation fails
-    """
+    """Validate that a value is a valid string."""
     if not isinstance(value, str):
         raise ValueError(f"{var_name} must be a string, got {type(value).__name__}")
     
@@ -146,19 +69,8 @@ def validate_string(value: Any, var_name: str, allow_empty: bool = False) -> boo
 
 
 def validate_asin(asin: Any) -> bool:
-    """
-    Validate Amazon ASIN format.
-    
-    Args:
-        asin: ASIN to validate
-    
-    Returns:
-        True if valid
-        
-    Raises:
-        ValueError: If invalid ASIN
-    """
-    validate_string(asin, "ASIN", allow_empty=False)
+    """Validate Amazon ASIN format."""
+    validate_not_empty(asin, "ASIN", str)
     
     if len(asin.strip()) != 10:
         raise ValueError(f"ASIN must be 10 characters, got {len(asin.strip())}")
@@ -166,27 +78,8 @@ def validate_asin(asin: Any) -> bool:
     return True
 
 
-def validate_range(
-    value: Any,
-    var_name: str,
-    min_val: Optional[float] = None,
-    max_val: Optional[float] = None
-) -> bool:
-    """
-    Validate that a numeric value is within a range.
-    
-    Args:
-        value: Value to validate
-        var_name: Variable name for error message
-        min_val: Minimum allowed value (inclusive)
-        max_val: Maximum allowed value (inclusive)
-    
-    Returns:
-        True if valid
-        
-    Raises:
-        ValueError: If validation fails
-    """
+def validate_range(value: Any, var_name: str, min_val: Optional[float] = None, max_val: Optional[float] = None) -> bool:
+    """Validate that a numeric value is within a range."""
     if not isinstance(value, (int, float)):
         raise ValueError(f"{var_name} must be numeric, got {type(value).__name__}")
     
@@ -199,29 +92,8 @@ def validate_range(
     return True
 
 
-def validate_list(
-    value: Any,
-    var_name: str,
-    min_length: Optional[int] = None,
-    max_length: Optional[int] = None,
-    item_type: Optional[Type] = None
-) -> bool:
-    """
-    Validate a list with optional length and item type checks.
-    
-    Args:
-        value: Value to validate
-        var_name: Variable name for error message
-        min_length: Minimum list length
-        max_length: Maximum list length
-        item_type: Expected type of list items
-    
-    Returns:
-        True if valid
-        
-    Raises:
-        ValueError: If validation fails
-    """
+def validate_list(value: Any, var_name: str, min_length: Optional[int] = None, max_length: Optional[int] = None, item_type: Optional[Type] = None) -> bool:
+    """Validate a list with optional length and item type checks."""
     if not isinstance(value, list):
         raise ValueError(f"{var_name} must be a list, got {type(value).__name__}")
     
@@ -277,19 +149,7 @@ class UINotifier:
 
 @contextmanager
 def progress_tracker(total: int, desc: str = "Processing"):
-    """
-    Context manager for Streamlit progress tracking.
-    
-    Usage:
-        with progress_tracker(100, "Scraping products") as progress:
-            for i in range(100):
-                # do work
-                progress.update(i + 1, f"Processing item {i+1}")
-    
-    Args:
-        total: Total number of items
-        desc: Description of the operation
-    """
+    """Context manager for Streamlit progress tracking."""
     class ProgressTracker:
         def __init__(self, total: int, desc: str):
             self.total = total
@@ -326,17 +186,7 @@ def get_timestamp() -> str:
 
 
 def add_timestamps(data: dict, created: bool = True, updated: bool = True) -> dict:
-    """
-    Add timestamp fields to a data dictionary.
-    
-    Args:
-        data: Dictionary to add timestamps to
-        created: Whether to add 'created_at' timestamp
-        updated: Whether to add 'updated_at' timestamp
-    
-    Returns:
-        Dictionary with timestamps added
-    """
+    """Add timestamp fields to a data dictionary."""
     result = data.copy()
     timestamp = get_timestamp()
     
@@ -359,18 +209,7 @@ def safe_get(
     default: Any = None,
     expected_type: Optional[Type] = None
 ) -> Any:
-    """
-    Safely get value from dictionary with type checking.
-    
-    Args:
-        data: Dictionary to get value from
-        key: Key to retrieve
-        default: Default value if key not found or type mismatch
-        expected_type: Expected type of value
-    
-    Returns:
-        Value from dictionary or default
-    """
+    """Safely get value from dictionary with type checking."""
     value = data.get(key, default)
     
     if expected_type and value is not None and not isinstance(value, expected_type):
@@ -380,16 +219,7 @@ def safe_get(
 
 
 def safe_float(value: Any, default: float = 0.0) -> float:
-    """
-    Safely convert value to float.
-    
-    Args:
-        value: Value to convert
-        default: Default value if conversion fails
-    
-    Returns:
-        Float value or default
-    """
+    """Safely convert value to float."""
     try:
         if value is None:
             return default
@@ -399,16 +229,7 @@ def safe_float(value: Any, default: float = 0.0) -> float:
 
 
 def safe_int(value: Any, default: int = 0) -> int:
-    """
-    Safely convert value to int.
-    
-    Args:
-        value: Value to convert
-        default: Default value if conversion fails
-    
-    Returns:
-        Int value or default
-    """
+    """Safely convert value to int."""
     try:
         if value is None:
             return default
@@ -418,16 +239,7 @@ def safe_int(value: Any, default: int = 0) -> int:
 
 
 def remove_duplicates_by_key(items: List[dict], key: str) -> List[dict]:
-    """
-    Remove duplicate dictionaries based on a key.
-    
-    Args:
-        items: List of dictionaries
-        key: Key to use for deduplication
-    
-    Returns:
-        List with duplicates removed (preserves order)
-    """
+    """Remove duplicate dictionaries based on a key."""
     seen = set()
     result = []
     
@@ -445,15 +257,7 @@ def remove_duplicates_by_key(items: List[dict], key: str) -> List[dict]:
 # ============================================================================
 
 def get_logger(name: str) -> logging.Logger:
-    """
-    Get a logger instance.
-    
-    Args:
-        name: Logger name (usually __name__)
-    
-    Returns:
-        Logger instance
-    """
+    """Get a logger instance."""
     return logging.getLogger(name)
 
 
