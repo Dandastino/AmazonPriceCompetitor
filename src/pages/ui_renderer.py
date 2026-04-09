@@ -66,9 +66,9 @@ class UIRenderer:
         st.markdown("## Amazon Competitor Analysis")
 
     @staticmethod
-    def render_input_section() -> Tuple[str, str, str]:
+    def render_input_section() -> Tuple[str, str]:
         """Render input form for product and search parameters."""
-        col1, col2 = st.columns([1.5, 1, 1], gap="medium")
+        col1, col2 = st.columns(2, gap="medium")
 
         with col1:
             st.write("**ASIN**")
@@ -272,8 +272,8 @@ class UIRenderer:
         if f"page_{key_prefix}" not in st.session_state:
             st.session_state[f"page_{key_prefix}"] = 1
 
-        col_right = st.columns([3, 1])
-        with col_right:
+        cols = st.columns([3, 1])
+        with cols[1]:
             pagination_cols = st.columns([0.8, 0.8, 1.5])
             
             with pagination_cols[0]:

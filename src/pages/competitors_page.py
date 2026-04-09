@@ -65,7 +65,6 @@ def render():
     end_idx = min(start_idx + 10, len(ordered_competitors))
     
     st.caption(f"Showing competitors {start_idx + 1}–{end_idx} of {len(ordered_competitors)}")
-    st.divider()
     
     for idx in range(start_idx, end_idx):
         item = ordered_competitors[idx]
@@ -73,11 +72,11 @@ def render():
         score = item.get("score")
         ui.render_competitor_card(competitor, idx, score=score)
     
+    ui.render_pagination(len(ordered_competitors), items_per_page=10, key_prefix="competitors")
+
     st.divider()
     st.markdown("### Export Data")
     
-    # Pagination at the end
-    ui.render_pagination(len(ordered_competitors), items_per_page=10, key_prefix="competitors")
     
     comparison_data = []
     for item in ordered_competitors:

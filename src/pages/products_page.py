@@ -30,14 +30,12 @@ def render():
     start_idx = (page - 1) * items_per_page
     end_idx = min(start_idx + items_per_page, len(products))
 
-    st.divider()
 
     for idx in range(start_idx, end_idx):
         ui.render_product_card(products[idx], db, service, idx)
     
     _render_delete_all_section(db)
 
-    # Pagination at the end
     ui.render_pagination(product_count, items_per_page, key_prefix="products")
 
 
