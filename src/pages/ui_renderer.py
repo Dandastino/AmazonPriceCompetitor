@@ -153,7 +153,7 @@ class UIRenderer:
                     st.markdown(f"<span style='font-size: 1.2em;'>{stock_str}</span>", unsafe_allow_html=True)
 
                 if score is not None:
-                    st.caption(f"Score: {score:.0f}/110")
+                    st.caption(f"Score: {score:.0f}/100")
 
     @staticmethod
     def render_product_card(product: Dict[str, Any], db, service, index: int = 0) -> None:
