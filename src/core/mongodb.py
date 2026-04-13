@@ -14,7 +14,7 @@ Key design principles:
 import logging
 import os
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from pymongo import MongoClient, ASCENDING, DESCENDING
 from pymongo.collection import Collection
@@ -525,6 +525,71 @@ class MongoDB:
         except Exception as e:
             logger.error(f"Error getting competitor parent ASINs: {e}")
             return []
+
+    # ========================================================================
+    # ANALYSIS CACHE METHODS
+    # ========================================================================
+
+    def get_analysis_cache(self, cache_key: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve a cached analysis result if it exists and hasn't expired.
+
+        Args:
+            cache_key: Unique key identifying the cached result
+
+        Returns:
+            Cached data dict, or None if missing/expired
+        """
+        try:
+            if not hasattr(self, 'analysis_cache'):
+                self.analysis_cache = self.db["analysis_cache"]
+            doc = self.analysis_cache.find_one({"cache_key": cache_key})
+            if not doc:
+                return None
+            # Manual TTL check (expires_at field)
+            expires_at = doc.get("expires_at")
+            if expires_at and datetime.utcnow() > expires_at:
+                self.analysis_cache.delete_one({"cache_key": cache_key})
+                logger.debug(f"Cache expired for key: {cache_key}")
+                return None
+            doc.pop("_id", None)
+            logger.info(f"Cache hit for key: {cache_key}")
+            return doc.get("data")
+        except Exception as e:
+            logger.warning(f"Error reading analysis cache: {e}")
+            return None
+
+    def save_analysis_cache(
+        self,
+        cache_key: str,
+        data: Any,
+        ttl_hours: int = 24
+    ) -> None:
+        """
+        Persist an analysis result to the cache collection.
+
+        Args:
+            cache_key: Unique key for this result
+            data: The data to cache (must be JSON-serialisable)
+            ttl_hours: How many hours until the cache entry expires
+        """
+        try:
+            if not hasattr(self, 'analysis_cache'):
+                self.analysis_cache = self.db["analysis_cache"]
+            expires_at = datetime.utcnow() + timedelta(hours=ttl_hours)
+            self.analysis_cache.update_one(
+                {"cache_key": cache_key},
+                {"$set": {
+                    "cache_key": cache_key,
+                    "data": data,
+                    "created_at": datetime.utcnow(),
+                    "expires_at": expires_at
+                }},
+                upsert=True
+            )
+            logger.info(f"Cached analysis for key: {cache_key} (TTL {ttl_hours}h)")
+        except Exception as e:
+            logger.warning(f"Error saving analysis cache: {e}")
 
     # ========================================================================
     # UTILITY METHODS

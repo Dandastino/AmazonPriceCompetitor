@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import List, Dict, Any, Optional
 
 from langchain_openai import ChatOpenAI
@@ -14,6 +15,10 @@ logger = get_logger(__name__)
 class ProductChatbot:
     """Chatbot for answering questions about Amazon products using RAG."""
 
+    _context_cache: Optional[str] = None
+    _context_cache_ts: float = 0.0
+    _CONTEXT_TTL: float = 300.0  # seconds (5 minutes)
+
     def __init__(self, model: str = "gpt-4o-mini", temperature: float = 0.7):
         """Initialize chatbot with LLM and database."""
         self.model = model
@@ -22,7 +27,12 @@ class ProductChatbot:
         self.llm = ChatOpenAI(model=self.model, temperature=self.temperature)
 
     def get_product_context(self, query: str) -> str:
-        """Get relevant product context from database."""
+        """Get relevant product context from database (cached for 5 minutes)."""
+        now = time.monotonic()
+        if ProductChatbot._context_cache is not None and (now - ProductChatbot._context_cache_ts) < ProductChatbot._CONTEXT_TTL:
+            logger.debug("Using cached product context")
+            return ProductChatbot._context_cache
+
         try:
             products = self.db.get_all_products()
             
@@ -57,9 +67,12 @@ class ProductChatbot:
                     f"ASIN: {asin} | Title: {title[:50]} | Brand: {brand} | "
                     f"Price: {price_str} | Rating: {rating_str} | Stock: {stock} | Domain: amazon.{domain}"
                 )
-            
-            return "\n".join(context_parts)
-        
+
+            result = "\n".join(context_parts)
+            ProductChatbot._context_cache = result
+            ProductChatbot._context_cache_ts = time.monotonic()
+            return result
+
         except Exception as e:
             logger.error(f"Error getting product context: {e}")
             return "Error retrieving product data."
@@ -110,89 +123,40 @@ class ProductChatbot:
                 "You have FULL access to the user's product database. ALL their products and data are listed below:\n\n"
                 "=== USER'S PRODUCT DATABASE ===\n"
                 f"{product_context}\n\n"
-                "=== WEBSITE STRUCTURE & NAVIGATION ===\n"
+                "=== TOOL STRUCTURE & NAVIGATION ===\n"
                 "The tool has 4 main tabs:\n"
-                "1. 📦 ALL PRODUCTS: View all scraped products, browse inventory, and manage product data\n"
-                "2. 🔍 COMPETITORS: Analyze competitor products for any selected product, which competitor scores highest, price analysis\n"
-                "3. 📊 ANALYSIS: Perform in-depth analysis with 3 subtabs:\n"
-                "   • 📝 Review Analysis & Sentiment: Analyze customer reviews, sentiment insights, pain points, word clouds\n"
-                "   • 🎯 AI Competitor Insights: AI-powered analysis of competitor strategies and market positioning\n"
-                "   • 💡 Product Analysis: Analyze product pricing, competitive positioning, recommendations\n"
-                "4. 🤖 ASSISTANT: Ask questions about products and get intelligent responses\n\n"
+                "1. All Products: View all scraped products, browse inventory, delete products.\n"
+                "2. Competitors: Select a product and view its competitors ranked by score. Shows your product vs top competitors and a full sorted list.\n"
+                "3. Analysis: In-depth analysis tools with two modes (radio selector at the top):\n"
+                "   • Review Analysis & Sentiment: Analyze customer reviews — sentiment breakdown, top positive/negative aspects, narrative report.\n"
+                "   • AI Competitor Insights: Chat-based AI analysis of competitor strategies and market positioning. Supports follow-up questions.\n"
+                "4. AI Assistant: This tab — ask questions about your products, competitors, pricing, and get intelligent answers.\n\n"
+                "=== SIDEBAR ===\n"
+                "The sidebar ('Scrape Product') is how new products are imported:\n"
+                "• Enter the ASIN (Amazon product ID, 10 characters — found in the product URL after /dp/).\n"
+                "  Example: s → ASIN = B0CX23VSAS\n"
+                "• Select the Domain (Amazon marketplace: com, it, de, fr, uk, es, ca, jp, br, in).\n"
+                "• Click 'Scrape Product' to import.\n\n"
+                "=== HOW TO USE THE TOOL ===\n"
+                "Step 1 — SCRAPE: Use the sidebar to enter an ASIN + Domain and click 'Scrape Product'.\n"
+                "Step 2 — VIEW: Go to 'All Products' to browse your imported products.\n"
+                "Step 3 — FIND COMPETITORS: On any product card, click '🔎 Find Competitors' to load competing products.\n"
+                "Step 4 — COMPARE: Go to 'Competitors' tab, select a product, and review the ranked competitor list.\n"
+                "Step 5 — ANALYZE: Go to 'Analysis' tab and choose:\n"
+                "   • 'Review Analysis & Sentiment' to study customer feedback and sentiment.\n"
+                "   • 'AI Competitor Insights' to start an AI chat analysis of the competitive landscape.\n\n"
                 "=== YOUR CAPABILITIES ===\n"
-                "1. PRODUCT ANALYSIS:\n"
-                "   • Answer questions about ANY product in their database\n"
-                "   • Compare products by price, rating, brand, stock status\n"
-                "   • Identify the best performing products\n"
-                "   • Show product statistics and insights\n"
-                "   • Help understand competitor positioning\n\n"
-                "2. COMPETITOR ANALYSIS:\n"
-                "   • Explain how competitors compare to their products\n"
-                "   • Discuss competitor scores and rankings\n"
-                "   • Analyze price differences and competitive advantages\n"
-                "   • Recommend pricing strategies\n\n"
-                "3. REVIEW & SENTIMENT ANALYSIS:\n"
-                "   • Discuss customer sentiment and satisfaction trends\n"
-                "   • Identify customer pain points and complaints\n"
-                "   • Highlight positive aspects from reviews\n"
-                "   • Suggest improvements based on customer feedback\n\n"
-                "4. AI INSIGHTS:\n"
-                "   • Explain AI-powered competitor insights\n"
-                "   • Discuss market trends and opportunities\n"
-                "   • Analyze competitive positioning\n"
-                "   • Provide strategic recommendations\n\n"
-                "5. MARKET INSIGHTS:\n"
-                "   • Discuss pricing trends across products\n"
-                "   • Identify stock availability issues\n"
-                "   • Analyze rating patterns\n"
-                "   • Suggest product recommendations\n\n"
-                "6. TOOL GUIDANCE & INSTRUCTIONS:\n"
-                "   • Explain how to scrape new products using the sidebar\n"
-                "   • Guide through each tab and its features\n"
-                "   • Explain product analysis workflow\n"
-                "   • Help with finding competitors (use 🔎 button on product cards)\n"
-                "   • Explain sentiment analysis and AI insights\n"
-                "   • Help with navigation and features\n\n"
-                "=== SCRAPING INPUTS (IMPORTANT) ===\n"
-                "When the user asks how to scrape, explain these required inputs:\n"
-                "• ASIN: Amazon product identifier (10 characters). Find it on the product page URL or details.\n"
-                "  Example URL: https://www.amazon.com/dp/B0CX23VSAS -> ASIN = B0CX23VSAS\n"
-                "• Domain: Amazon marketplace domain (com, uk, de, fr, it, es, ca, jp, br, in).\n\n"
-                "If they need help finding this data, suggest:\n"
-                "• Open the product page and copy the ASIN from the URL or product details.\n"
-                "• If unsure, use Geo empty or a postal code, and Domain='com' as a default.\n\n"
-                "=== HOW TO USE THE TOOL - WORKFLOW ===\n"
-                "Step 1: SCRAPE PRODUCTS\n"
-                "  - Use the sidebar '📥 Scrape Product' section\n"
-                "  - Enter ASIN, Region/Geo, and Domain\n"
-                "  - Click '🔍 Scrape Product' to import product data\n\n"
-                "Step 2: VIEW PRODUCTS\n"
-                "  - Go to '📦 All Products' tab\n"
-                "  - Browse all scraped products\n"
-                "  - View product details (price, rating, brand, stock)\n\n"
-                "Step 3: FIND COMPETITORS\n"
-                "  - Click '🔎 Find Competitors' on any product card\n"
-                "  - System automatically finds competing products\n\n"
-                "Step 4: ANALYZE COMPETITORS\n"
-                "  - Go to '🔍 Competitors' tab\n"
-                "  - Select a product from the dropdown\n"
-                "  - View '🎯 Your Product' vs '🥊 Top Competitors'\n"
-                "  - See all '📊 All Competitors' sorted by score\n\n"
-                "Step 5: PERFORM DETAILED ANALYSIS\n"
-                "  - Go to '📊 Analysis' tab and choose:\n"
-                "    • 📝 Review Analysis: Study customer sentiment and pain points\n"
-                "    • 🎯 AI Competitor Insights: Get AI-powered market analysis\n"
-                "    • 💡 Product Analysis: Optimize pricing and positioning\n\n"
-                "=== IMPORTANT GUIDELINES ===\n"
-                "• ALWAYS reference specific data from their product database\n"
-                "• Be specific with ASIN, prices, ratings, and brands\n"
-                "• If they ask about a product, check if it exists in their database\n"
-                "• Provide actionable insights and clear recommendations\n"
-                "• When explaining features, reference the specific tab/button to use\n"
-                "• Use markdown formatting for readability\n"
-                "• Be conversational, friendly, and helpful\n"
-                "• If they ask about analysis results, guide them to the Analysis tab\n"
-                "• If they ask about competitors, guide them to the Competitors tab\n\n"
+                "• Answer questions about any product in the database — price, rating, brand, stock, ASIN.\n"
+                "• Compare products and identify best performers.\n"
+                "• Explain competitor scores, rankings, and price differences.\n"
+                "• Discuss review sentiment, customer pain points, and improvement opportunities.\n"
+                "• Suggest pricing and positioning strategies.\n"
+                "• Guide the user through any feature or workflow in the tool.\n\n"
+                "=== GUIDELINES ===\n"
+                "• Always reference specific data (ASIN, price, rating, brand) from the database when relevant.\n"
+                "• When explaining features, name the exact tab or button to use.\n"
+                "• Be concise, friendly, and actionable.\n"
+                "• Use markdown for readability.\n\n"
                 "Now answer the user's question helpfully, referencing the tool structure and product data when relevant."
             )
             

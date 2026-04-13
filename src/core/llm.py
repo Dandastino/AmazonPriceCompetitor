@@ -296,33 +296,25 @@ class CompetitorAnalyzer:
         self.temperature = temperature
         self.db = MongoDB()
         self.rate_limiter = RateLimiter(calls_per_minute=3)
-        self.cache: Dict[str, tuple] = {}  # Simple in-memory cache
-        self.cache_ttl = 3600  # 1 hour
-        
+
         # Validate API key
         if not validate_api_key():
             logger.warning("API key validation failed - operations may fail")
 
     def _get_cache_key(self, asin: str) -> str:
         """Generate cache key for competitor analysis."""
-        return f"analysis_{asin}"
-    
+        return f"competitor_analysis_{asin}"
+
     def _get_cached_analysis(self, asin: str) -> Optional[str]:
-        """Retrieve cached analysis if available and not expired."""
-        key = self._get_cache_key(asin)
-        if key in self.cache:
-            result, timestamp = self.cache[key]
-            if datetime.now().timestamp() - timestamp < self.cache_ttl:
-                logger.info(f"📦 Using cached analysis for {asin}")
-                return result
-            else:
-                del self.cache[key]
-        return None
-    
+        """Retrieve cached analysis from MongoDB if available and not expired."""
+        data = self.db.get_analysis_cache(self._get_cache_key(asin))
+        if data is not None:
+            logger.info(f"📦 Using cached analysis for {asin}")
+        return data
+
     def _cache_analysis(self, asin: str, result: str) -> None:
-        """Cache analysis result."""
-        key = self._get_cache_key(asin)
-        self.cache[key] = (result, datetime.now().timestamp())
+        """Persist analysis result to MongoDB cache (24h TTL)."""
+        self.db.save_analysis_cache(self._get_cache_key(asin), result, ttl_hours=24)
     
     def _find_competitors_by_similarity(self, product: Dict[str, Any], limit: int = 5) -> List[Dict[str, Any]]:
         """Find competitors by category, product type, and price similarity."""
@@ -621,27 +613,69 @@ class CompetitorAnalyzer:
 
         return result
 
+    def followup(
+        self,
+        chat_history: List[Dict[str, Any]],
+        question: str,
+        product: Dict[str, Any],
+        competitors: List[Dict[str, Any]],
+    ) -> str:
+        """Handle a follow-up question using the conversation history as context."""
+        try:
+            from langchain_openai import ChatOpenAI
+            from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+        except ImportError as e:
+            raise ImportError(f"Missing LangChain dependencies: {e}")
+
+        price_info = UnitPriceNormalizer.get_comparison_price(product)
+        price_display = f"{product.get('currency', '$')}{product.get('price', 'N/A')}"
+        if price_info.get("has_size_data"):
+            price_display += f" ({price_info['price_per_unit']})"
+
+        system_content = (
+            "You are an expert e-commerce market strategist helping analyze Amazon products. "
+            f"Context — Target product: \"{product.get('title', 'Unknown')}\" | "
+            f"ASIN: {product.get('asin')} | Price: {price_display} | "
+            f"Rating: {product.get('rating', 'N/A')}/5.0 | "
+            f"Competitors analyzed: {len(competitors)}. "
+            "Be concise and actionable. Use markdown for formatting when helpful."
+        )
+
+        messages = [SystemMessage(content=system_content)]
+        for msg in chat_history:
+            if msg["role"] == "user":
+                messages.append(HumanMessage(content=msg["content"]))
+            elif msg["role"] == "assistant":
+                messages.append(AIMessage(content=msg["content"]))
+        messages.append(HumanMessage(content=question))
+
+        self.rate_limiter.wait_if_needed()
+        llm = ChatOpenAI(model=self.model, temperature=0.3, timeout=30, max_retries=2)
+        return llm.invoke(messages).content
+
     def _create_response_string(self, result: AnalysisOutput) -> str:
-        """Format analysis output as readable string."""
+        """Format analysis output as markdown."""
         lines = [
-            "Summary:\n" + result.summary,
-            "\nPositioning:\n" + result.positioning,
-            "\nTop Competitors:"
+            f"## Market Summary\n\n{result.summary}",
+            f"\n## Competitive Positioning\n\n{result.positioning}",
+            "\n## Top Competitors\n",
         ]
 
         for c in result.top_competitors[:5]:
-            pts = "; ".join(c.key_points) if c.key_points else "No additional info"
             currency = c.currency or "$"
-            price_str = f"{currency} {c.price:.2f}" if c.price else "N/A"
+            price_str = f"{currency}{c.price:.2f}" if c.price else "N/A"
             rating_str = f"{c.rating:.1f}" if c.rating else "N/A"
-            lines.append(
-                f"  • {c.asin} | {c.title[:40]} | {price_str} | ⭐ {rating_str}"
-            )
+            title = c.title[:55] if c.title else c.asin
+            lines.append(f"**{title}**  ")
+            lines.append(f"ASIN: `{c.asin}` &nbsp;|&nbsp; Price: {price_str} &nbsp;|&nbsp; Rating: ⭐ {rating_str}")
+            for kp in c.key_points[:2]:
+                lines.append(f"- {kp}")
+            lines.append("")
 
         if result.recommendations:
-            lines.append("\nRecommendations:")
-            for rec in result.recommendations:
-                lines.append(f"  • {rec}")
+            lines.append("\n## Recommendations\n")
+            for i, rec in enumerate(result.recommendations, 1):
+                lines.append(f"{i}. {rec}")
 
         return "\n".join(lines)
 

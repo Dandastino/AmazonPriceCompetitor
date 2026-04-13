@@ -112,8 +112,6 @@ class ProductService:
             if product_type:
                 st.write(f"Target product type: {product_type}")
 
-            st.write(f"Searching in categories: {search_categories[:3]}")
-
             # Search competitors across categories
             all_results = self._search_across_categories(
                 parent, search_categories, search_domain, pages, product_type
@@ -163,12 +161,18 @@ class ProductService:
         return None
 
     def _search_across_categories(self, parent: Dict[str, Any], categories: List[str], domain: str, pages: int, product_type: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Search competitors across all categories."""
+        """Search competitors using only the most specific categories."""
         all_results = []
-        progress_bar = st.progress(0)
 
-        st.write(f"Searching throw the categorys: {categories[0:]}")
-        for idx, category in enumerate(categories[0:]):
+        # Use only the 2 most specific categories (last in the breadcrumb hierarchy).
+        # Searching every breadcrumb level independently is wasteful: "Elektronik" and
+        # "Foto" return duplicate or irrelevant results, while the leaf categories
+        # (e.g. "In-Ear-Ohrhörer", "Kopfhörer") are the ones that actually matter.
+        search_categories = categories[-2:] if len(categories) >= 2 else categories
+        st.write(f"Searching in categories: {search_categories}")
+
+        progress_bar = st.progress(0)
+        for idx, category in enumerate(search_categories):
             try:
                 search_result = search_competitors(
                     query_title=parent.get("title", ""),
@@ -178,7 +182,7 @@ class ProductService:
                     product_type=product_type,
                 )
                 all_results.extend(search_result or [])
-                progress_bar.progress((idx + 1) / len(categories))
+                progress_bar.progress((idx + 1) / len(search_categories))
             except Exception as e:
                 logger.error(f"Error searching category {category}: {e}")
                 st.error(f"Error searching category {category}: {str(e)}")
@@ -222,7 +226,7 @@ class ProductService:
                     logger.info(f"Stored competitor {asin} for parent {parent_asin}")
             except Exception as e:
                 logger.error(f"Error scraping competitor {asin}: {e}")
-                st.warning(f"Failed to scrape competitor {asin}")
+                st.warning(f"Failed to scrape competitor {asin}: {str(e)}")
 
             progress_bar.progress(min((idx + 1) / len(competitor_asins), 1.0))
 

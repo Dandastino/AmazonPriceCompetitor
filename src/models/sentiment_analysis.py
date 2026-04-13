@@ -227,20 +227,20 @@ Return ONLY valid JSON array, no other text."""
                 temperature=0.3,
                 max_tokens=500
             )
-            
+
             content = response.choices[0].message.content.strip()
-            
+
             # Parse JSON response
             # Remove markdown code blocks if present
             content = re.sub(r'```json\s*|\s*```', '', content)
-            
+
             aspects = json.loads(content)
-            
+
             # Validate structure
             if not isinstance(aspects, list):
                 logger.warning("LLM returned non-list response")
                 return []
-            
+
             # Ensure all required fields
             validated_aspects = []
             for aspect in aspects:
@@ -250,28 +250,112 @@ Return ONLY valid JSON array, no other text."""
                     if aspect['sentiment'] not in ['positive', 'negative', 'neutral']:
                         aspect['sentiment'] = 'neutral'
                     validated_aspects.append(aspect)
-            
+
             return validated_aspects
-            
+
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse LLM JSON response: {e}")
             return []
         except Exception as e:
+            # Re-raise authentication and quota errors so callers can surface them
+            error_type = type(e).__name__
+            if any(t in error_type for t in ("Authentication", "Permission", "RateLimit", "Quota", "APIConnection")):
+                raise
             logger.error(f"Aspect extraction failed: {e}")
             return []
     
+    def extract_aspects_batch(
+        self,
+        review_texts: List[str],
+        product_category: Optional[str] = None
+    ) -> List[List[Dict[str, Any]]]:
+        """
+        Extract aspects from multiple reviews in a single API call.
+
+        Args:
+            review_texts: List of review texts (up to 10 at a time)
+            product_category: Optional product category for context
+
+        Returns:
+            List of aspect lists, one per review (same order as input)
+        """
+        if not self.client or not review_texts:
+            return [[] for _ in review_texts]
+
+        category_context = f" for a {product_category} product" if product_category else ""
+        numbered_reviews = "\n".join(
+            f'Review {i + 1}: "{text}"' for i, text in enumerate(review_texts)
+        )
+
+        prompt = (
+            f"Analyze these {len(review_texts)} product reviews{category_context} "
+            "and extract specific aspects with their sentiments.\n\n"
+            f"{numbered_reviews}\n\n"
+            f"Return a JSON array of exactly {len(review_texts)} arrays (one per review, in order). "
+            "Each inner array contains objects with:\n"
+            '- "aspect": the product feature/attribute (e.g., "battery", "packaging", "quality")\n'
+            '- "sentiment": "positive", "negative", or "neutral"\n'
+            '- "reason": a brief phrase (3-5 words)\n\n'
+            "Return ONLY valid JSON, no other text."
+        )
+
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are an expert at analyzing product reviews. Always return valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=1500
+            )
+
+            content = response.choices[0].message.content.strip()
+            content = re.sub(r'```json\s*|\s*```', '', content)
+            parsed = json.loads(content)
+
+            if not isinstance(parsed, list) or len(parsed) != len(review_texts):
+                logger.warning("Batch ABSA returned unexpected structure, falling back per-review")
+                return [self.extract_aspects(t, product_category) for t in review_texts]
+
+            results = []
+            for review_aspects in parsed:
+                if not isinstance(review_aspects, list):
+                    results.append([])
+                    continue
+                validated = []
+                for aspect in review_aspects:
+                    if isinstance(aspect, dict) and all(k in aspect for k in ['aspect', 'sentiment', 'reason']):
+                        aspect['sentiment'] = aspect['sentiment'].lower()
+                        if aspect['sentiment'] not in ['positive', 'negative', 'neutral']:
+                            aspect['sentiment'] = 'neutral'
+                        validated.append(aspect)
+                results.append(validated)
+
+            return results
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse batch ABSA JSON: {e}")
+            return [[] for _ in review_texts]
+        except Exception as e:
+            error_type = type(e).__name__
+            if any(t in error_type for t in ("Authentication", "Permission", "RateLimit", "Quota", "APIConnection")):
+                raise
+            logger.error(f"Batch aspect extraction failed: {e}")
+            return [[] for _ in review_texts]
+
     def analyze_reviews_batch(
-        self, 
+        self,
         reviews: List[str],
         product_category: Optional[str] = None
     ) -> List[List[Dict[str, Any]]]:
         """
         Extract aspects from multiple reviews.
-        
+
         Args:
             reviews: List of review texts
             product_category: Optional product category
-            
+
         Returns:
             List of aspect lists (one per review)
         """
@@ -279,7 +363,7 @@ Return ONLY valid JSON array, no other text."""
         for review in reviews:
             aspects = self.extract_aspects(review, product_category)
             results.append(aspects)
-        
+
         return results
 
 

@@ -168,8 +168,10 @@ class OxylabsClient:
         if not cleaned:
             return ""
 
-        # Split on common delimiters and keep left part
-        parts = re.split(r"\s*[-|:]\s*", cleaned, maxsplit=1)
+        # Only split on separator dashes/colons that are surrounded by spaces
+        # (e.g. "Product Name – Subtitle") — NOT on hyphens inside compound words
+        # like "In-Ear-Ohrhörer" or "WF-1000XM5".
+        parts = re.split(r"\s+[-–|:]\s+", cleaned, maxsplit=1)
         return parts[0].strip()
 
 
@@ -255,26 +257,27 @@ class OxylabsClient:
         if not product_type:
             return True
 
-        product_type_lower = product_type.lower()
-        title = item.get("title", "").lower()
-
-        # Check if product_type words appear in title
-        product_words = product_type_lower.split()
-        matching_words = sum(1 for word in product_words if word in title)
-        if matching_words >= len(product_words) // 2 + 1:  # At least half +1 words match
-            logger.debug(f"Product type match: '{product_type}' matches title '{item.get('title', '')}'")
+        # Tokenize by splitting on ALL non-word characters (spaces, hyphens, underscores…)
+        # so "In-Ear-Ohrhörer" → ["In", "Ear", "Ohrhörer"] instead of one unhelpful token.
+        tokens = [t.lower() for t in re.findall(r'\w+', product_type) if len(t) > 2]
+        if not tokens:
             return True
 
-        # Check categories
+        title = item.get("title", "").lower()
         categories = item.get("categories") or []
         category_path = item.get("category_path") or []
-        combined = " ".join([str(c).lower() for c in categories + category_path])
-        if any(word in combined for word in product_words):
-            logger.debug(f"Product type match: '{product_type}' matches categories '{combined}'")
-            return True
+        combined = title + " " + " ".join(str(c).lower() for c in categories + category_path)
 
-        logger.debug(f"No product type match: '{product_type}' not in title '{item.get('title', '')}' or categories")
-        return False
+        matching = sum(1 for token in tokens if token in combined)
+        # Pass if at least half of the meaningful tokens appear anywhere
+        threshold = max(1, len(tokens) // 2)
+        result = matching >= threshold
+
+        if result:
+            logger.debug(f"Product type match ({matching}/{len(tokens)} tokens): '{product_type}' ← '{item.get('title', '')}'")
+        else:
+            logger.debug(f"No product type match ({matching}/{len(tokens)} tokens): '{product_type}' ✗ '{item.get('title', '')}'")
+        return result
 
     def search_competitors(
         self,
